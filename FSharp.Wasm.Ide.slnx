@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WidgetEditor/FSharp.Wasm.Ide.WidgetEditor.fsproj" />
+    <Project Path="src/WidgetEditor.Browser/FSharp.Wasm.Ide.WidgetEditor.Browser.fsproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WidgetEditor.Session/FSharp.Wasm.Ide.WidgetEditor.Session.fsproj" />
+  </Folder>
+</Solution>

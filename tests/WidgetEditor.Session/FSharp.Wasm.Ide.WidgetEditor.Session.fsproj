@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Headless session test: replays a scripted pointer + keyboard session against the widget editor and checks the model;
+       writes PNGs through the software renderer of fsharp-wasm-graphics (GlyphAura text). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WidgetEditor/FSharp.Wasm.Ide.WidgetEditor.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Render/FSharp.Graphics.Render.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Host/FSharp.Graphics.Host.fsproj" />
+  </ItemGroup>
+</Project>

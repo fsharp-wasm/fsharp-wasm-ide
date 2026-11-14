@@ -1,0 +1,14 @@
+<Project>
+  <!-- Metadata of the projects of this repository (the submodules under lib/ and tools/ have their own).  Nothing here is
+       packaged: the editor ships as WidgetEditor.wasm (build/build.sh). -->
+  <PropertyGroup>
+    <Version>0.1.0-preview</Version>
+    <Authors>The fsharp-wasm contributors</Authors>
+    <Copyright>Copyright 2026 The fsharp-wasm contributors</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/fsharp-wasm/fsharp-wasm-ide</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <IsPackable>false</IsPackable>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>
