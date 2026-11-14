@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The widget editor as a browser module: it draws its whole interface onto one <canvas> through the functions of
+       runtime/gfx.js (fsharp-wasm-runtime), which also forwards pointer, key and size events to the exports of this module.
+       Compiled to WasmGC by the fsharp-wasm compiler:  bash build/build.sh  ->  dist/WidgetEditor.wasm
+       Only this project's last file becomes the module's exports; the dependencies stay in their own projects. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>FSharp.Wasm.Ide.Browser</RootNamespace>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);NU1900;NETSDK1188</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="WidgetEditor.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../WidgetEditor/FSharp.Wasm.Ide.WidgetEditor.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Canvas/FSharp.Graphics.Canvas.fsproj" />
+  </ItemGroup>
+</Project>

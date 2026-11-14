@@ -1,0 +1,9 @@
+[submodule "lib/graphics"]
+	path = lib/graphics
+	url = ../fsharp-wasm-graphics
+[submodule "lib/runtime"]
+	path = lib/runtime
+	url = ../fsharp-wasm-runtime
+[submodule "lib/fsharp-wasm-core"]
+	path = lib/fsharp-wasm-core
+	url = ../fsharp-wasm-core

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The widget editor: a TEA application written with the Widgets library of fsharp-wasm-graphics — a palette, a design
+       surface, an inspector, a preview and an export to F#.  Library only: no host, no drawing; the browser module
+       (../WidgetEditor.Browser) and the headless session test (../../tests/WidgetEditor.Session) plug it in.  Written in
+       the subset fsharp-wasm compiles, so the same sources run under .NET and as WebAssembly GC. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FSharp.Wasm.Ide.WidgetEditor</AssemblyName>
+    <RootNamespace>FSharp.Wasm.Ide.WidgetEditor</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Model.fs" />
+    <Compile Include="Export.fs" />
+    <Compile Include="View.fs" />
+    <Compile Include="App.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Tea/FSharp.Graphics.Tea.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.SceneDsl/FSharp.Graphics.SceneDsl.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Widgets/FSharp.Graphics.Widgets.fsproj" />
+  </ItemGroup>
+</Project>

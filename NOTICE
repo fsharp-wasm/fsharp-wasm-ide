@@ -1,0 +1,11 @@
+fsharp-wasm-ide
+Copyright 2026 The fsharp-wasm contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Provenance: the widget editor (src/WidgetEditor, src/WidgetEditor.Browser, tests/WidgetEditor.Session) was written as the GUI builder
+demo of fsharp-wasm-graphics and moved here; its history up to the move is in that repository.
+
+Components that are not part of this work and keep their own licence:
+  lib/graphics, lib/runtime, lib/fsharp-wasm-core   git submodules (fsharp-wasm-graphics, fsharp-wasm-runtime, fsharp-wasm-core), Apache-2.0
+(The compiler, fsharp-wasm, is not part of this repository; it is used as a release binary or a checkout.)
