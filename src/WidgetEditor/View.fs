@@ -18,6 +18,39 @@ module View =
     [<Literal>]
     let CodeH = 230.0f
 
+    // ---- small drawing helpers ---------------------------------------------------------------
+
+    /// A rounded label: the value of a property, the size of a selection, the kind of an element.
+    let private chip (ui: Ui<Msg>) (text: string) (bg: Color) (fg: Color) : Scene =
+        let w = Ui.textWidth ui 11.0f text
+        Group [ rectangle { bounds 0.0f 0.0f (w + 12.0f) 18.0f; radius 6.0f; fill bg }
+                shift 6.0f 2.0f (Text(text, Ui.textStyle ui 11.0f fg)) ]
+
+    let private chipWidth (ui: Ui<Msg>) (text: string) = Ui.textWidth ui 11.0f text + 12.0f
+
+    /// What an element looks like, in 22 x 14 pixels: the palette shows it instead of only naming it.
+    let private icon (th: Theme) (k: Kind) : Scene =
+        let ink = th.TextMuted
+        let accent = th.Accent
+        match k with
+        | KButton -> rectangle { bounds 0 2 22 10; radius 3; fill accent }
+        | KLabel -> Group [ rectangle { bounds 0 3 22 2; radius 1; fill ink }; rectangle { bounds 0 8 15 2; radius 1; fill ink } ]
+        | KHeading -> Group [ rectangle { bounds 0 1 16 5; radius 2; fill th.Text }; rectangle { bounds 0 9 22 2; radius 1; fill ink } ]
+        | KToggle -> Group [ rectangle { bounds 0 2 22 10; radius 5; fill accent }; circle { bounds 13 4 6 6; fill th.OnAccent } ]
+        | KCheck -> Group [ rectangle { bounds 5 1 12 12; radius 3; fill accent }; rectangle { bounds 8 6 6 2; radius 1; fill th.OnAccent } ]
+        | KSlider -> Group [ rectangle { bounds 0 6 22 2; radius 1; fill ink }; rectangle { bounds 0 6 12 2; radius 1; fill accent }; circle { bounds 8 3 8 8; fill th.Text } ]
+        | KText -> Group [ rectangle { bounds 0 1 22 12; radius 3; stroke ink 1.5f }; rectangle { bounds 4 4 1 6; fill accent } ]
+        | KProgress -> Group [ rectangle { bounds 0 5 22 4; radius 2; fill ink }; rectangle { bounds 0 5 14 4; radius 2; fill accent } ]
+        | KCard -> Group [ rectangle { bounds 0 0 22 14; radius 3; stroke ink 1.5f }; rectangle { bounds 4 4 9 2; radius 1; fill th.Text } ]
+        | KDivider -> rectangle { bounds 0 6 22 2; radius 1; fill ink }
+
+    /// The mark of the tool: an accent tile with a little layout in it.
+    let private logo (th: Theme) : Scene =
+        Group [ rectangle { bounds 0 0 28 28; radius 8; vgradient th.AccentHover th.AccentPressed; shadow 0 2 6 (rgba 0 0 0 90) }
+                rectangle { bounds 6 7 16 5; radius 2; fill th.OnAccent }
+                rectangle { bounds 6 15 9 6; radius 2; fill (Color.withAlpha 0.75f th.OnAccent) }
+                rectangle { bounds 17 15 5 6; radius 2; fill (Color.withAlpha 0.75f th.OnAccent) } ]
+
     // ---- the designed widgets ---------------------------------------------------------------
 
     let private nodeWidget (ui: Ui<Msg>) (n: Node) : Scene =
@@ -83,49 +116,68 @@ module View =
         let grid =
             if m.Preview then Empty
             else
-                let line = Color.withAlpha 0.18f th.TextMuted
-                Group [ for gx in 1 .. int (w / 32.0f) -> rectangle { bounds (gx * 32) 0 1 (int h); fill line }
-                        for gy in 1 .. int (h / 32.0f) -> rectangle { bounds 0 (gy * 32) (int w) 1; fill line } ]
+                let minor = Color.withAlpha 0.10f th.TextMuted
+                let major = Color.withAlpha 0.20f th.TextMuted
+                let tone i = if i % 4 = 0 then major else minor
+                Group [ for gx in 1 .. int (w / 32.0f) -> rectangle { bounds (gx * 32) 0 1 (int h); fill (tone gx) }
+                        for gy in 1 .. int (h / 32.0f) -> rectangle { bounds 0 (gy * 32) (int w) 1; fill (tone gy) } ]
+        let boundsOf (n: Node) : Rect =
+            let b0 = Ui.measure dui (nodeWidget dui n)
+            Rect.create b0.X b0.Y (Scalar.max' b0.W 24.0f) (Scalar.max' b0.H 18.0f)
         let node (n: Node) : Scene =
             let widget = nodeWidget dui n
-            let b0 = Ui.measure dui widget
-            let b = Rect.create b0.X b0.Y (Scalar.max' b0.W 24.0f) (Scalar.max' b0.H 18.0f)
-            let body =
-                if m.Preview then widget
-                else
-                    let selected = (m.Selected = Some n.Id)
-                    Group [
-                        widget
-                        (if selected then
-                            rectangle { bounds (b.X - 4.0f) (b.Y - 4.0f) (b.W + 8.0f) (b.H + 8.0f)
-                                        radius 4.0f; stroke th.Accent 1.5f }
-                         else Empty)
-                        dragOverlay chrome n b
-                        (if selected && Kind.hasWidth n.Kind then widthHandle chrome th n b else Empty)
-                    ]
+            let body = if m.Preview then widget else Group [ widget; dragOverlay chrome n (boundsOf n) ]
             shift n.X n.Y body
+        // What marks the selection is drawn above every element, so that a neighbour never covers the handles or the size.
+        let selection : Scene =
+            match m.Selected |> Option.bind (fun id -> m.Nodes |> List.tryFind (fun n -> n.Id = id)) with
+            | Some n when not m.Preview ->
+                let b = boundsOf n
+                let x0, y0, x1, y1 = b.X - 4.0f, b.Y - 4.0f, b.X + b.W + 4.0f, b.Y + b.H + 4.0f
+                let corner (cx: float32) (cy: float32) =
+                    rectangle { bounds (cx - 4.0f) (cy - 4.0f) 8.0f 8.0f; radius 2.0f; fill Color.White; stroke th.Accent 1.5f }
+                let size = sprintf "%d × %d" (int b.W) (int b.H)
+                shift n.X n.Y
+                    (Group [ rectangle { bounds x0 y0 (x1 - x0) (y1 - y0); radius 4.0f; stroke th.Accent 1.5f }
+                             corner x0 y0; corner x1 y0; corner x0 y1; corner x1 y1
+                             shift ((x0 + x1) * 0.5f - chipWidth chrome size * 0.5f) (y1 + 8.0f) (chip chrome size (rgba 8 12 24 235) Color.White)
+                             (if Kind.hasWidth n.Kind then widthHandle chrome th n b else Empty) ])
+            | _ -> Empty
         Clip(Rect.create 0.0f 0.0f w h,
              Group [ rectangle { bounds 0.0f 0.0f w h; fill th.Background }
                      grid
-                     Group (m.Nodes |> List.map node) ])
+                     Group (m.Nodes |> List.map node)
+                     selection
+                     (if List.isEmpty m.Nodes && not m.Preview then
+                         let hint = "Nothing here yet — click an element in the palette to add it"
+                         shift (w * 0.5f - Ui.textWidth chrome 14.0f hint * 0.5f) (h * 0.5f - 10.0f)
+                               (Text(hint, Ui.textStyle chrome 14.0f th.TextMuted))
+                      else Empty) ])
 
     // ---- chrome -----------------------------------------------------------------------------
 
     let private palette (ui: Ui<Msg>) : Scene =
         let items =
             [ for k in Kind.all ->
-                Button.view ui ("pal-" + Kind.name k)
-                    { Button.make ("+  " + Kind.name k) (fun () -> ui.Send(Add k)) with
-                        Variant = Button.Secondary; Width = ValueSome 158.0f } ]
+                Group [ Button.view ui ("pal-" + Kind.name k)
+                            { Button.make (Kind.name k) (fun () -> ui.Send(Add k)) with
+                                Variant = Button.Secondary; Width = ValueSome 158.0f }
+                        shift 12.0f 10.0f (icon ui.Theme k) ] ]
         column {
             gap 8
             child (Label.view ui Label.Heading "Elements")
-            child (Label.view ui Label.Caption "Click to add to the canvas")
+            child (Label.view ui Label.Caption "Click to add to the surface")
             children items
         }
 
     let private field (ui: Ui<Msg>) (caption: string) (control: Scene) : Scene =
         column { gap 4; child (Label.view ui Label.Caption caption); child control }
+
+    /// A property with its current value shown as a chip at the right of the caption.
+    let private valued (ui: Ui<Msg>) (caption: string) (value: string) (control: Scene) : Scene =
+        let head = Group [ Label.view ui Label.Caption caption
+                           shift (220.0f - chipWidth ui value) -3.0f (chip ui value ui.Theme.SurfaceRaised ui.Theme.Text) ]
+        column { gap 4; child head; child control }
 
     let private inspector (ui: Ui<Msg>) (m: Model) (canvasW: float32) : Scene =
         match m.Selected |> Option.bind (fun id -> m.Nodes |> List.tryFind (fun n -> n.Id = id)) with
@@ -142,15 +194,16 @@ module View =
                 Slider.view ui id { Min = lo; Max = hi; Value = v; Width = 220.0f; OnChange = fun x -> send (f x) }
             column {
                 gap 12
-                child (Label.view ui Label.Heading ("Inspector  -  " + Kind.name n.Kind))
+                child (Group [ Label.view ui Label.Heading "Inspector"
+                               shift (220.0f - chipWidth ui (Kind.name n.Kind)) 3.0f (chip ui (Kind.name n.Kind) ui.Theme.Accent ui.Theme.OnAccent) ])
                 childIf (Kind.hasText n.Kind)
                     (field ui "Text" (TextField.view ui "insp-text" { Value = n.Text; Placeholder = "(empty)"; Width = 220.0f }))
-                child (field ui (sprintf "X  (%d)" (int n.X)) (sl "insp-x" 0.0f canvasW n.X (fun v -> MoveTo(n.Id, Model.snap v, n.Y))))
-                child (field ui (sprintf "Y  (%d)" (int n.Y)) (sl "insp-y" 0.0f 600.0f n.Y (fun v -> MoveTo(n.Id, n.X, Model.snap v))))
+                child (valued ui "X" (sprintf "%d" (int n.X)) (sl "insp-x" 0.0f canvasW n.X (fun v -> MoveTo(n.Id, Model.snap v, n.Y))))
+                child (valued ui "Y" (sprintf "%d" (int n.Y)) (sl "insp-y" 0.0f 600.0f n.Y (fun v -> MoveTo(n.Id, n.X, Model.snap v))))
                 childIf (Kind.hasWidth n.Kind)
-                    (field ui (sprintf "Width  (%d)" (int n.W)) (sl "insp-w" 40.0f 600.0f (max 40.0f n.W) (fun v -> SetW(n.Id, v))))
+                    (valued ui "Width" (sprintf "%d" (int n.W)) (sl "insp-w" 40.0f 600.0f (max 40.0f n.W) (fun v -> SetW(n.Id, v))))
                 childIf (Kind.hasValue n.Kind)
-                    (field ui (sprintf "Value  (%.2f)" n.Value) (sl "insp-v" 0.0f 1.0f n.Value (fun v -> SetValue(n.Id, v))))
+                    (valued ui "Value" (sprintf "%.2f" n.Value) (sl "insp-v" 0.0f 1.0f n.Value (fun v -> SetValue(n.Id, v))))
                 childIf (Kind.hasOn n.Kind)
                     (Toggle.view ui "insp-on" "Checked / on" n.On (fun v -> send (SetOn(n.Id, v))))
                 child (Divider.horizontal ui 220.0f)
@@ -185,11 +238,14 @@ module View =
                             Variant = Button.Secondary })
             }
         let bw = (Ui.measure ui buttons).W
+        let title = Label.view ui Label.Heading "Widget Editor"
+        let titleW = (Ui.measure ui title).W
         Group [
-            rectangle { bounds 0.0f 0.0f w TopH; fill ui.Theme.Surface }
+            rectangle { bounds 0.0f 0.0f w TopH; vgradient ui.Theme.SurfaceRaised ui.Theme.Surface; shadow 0 2 10 (rgba 0 0 0 70) }
             rectangle { bounds 0.0f (TopH - 1.0f) w 1.0f; fill ui.Theme.Border }
-            shift 20 13 (Label.view ui Label.Heading "GUI Builder")
-            shift 150 17 (Label.view ui Label.Caption "FSharp.Graphics.Widgets demo")
+            shift 16 12 (logo ui.Theme)
+            shift 54 13 title
+            shift (54.0f + titleW + 12.0f) 16 (chip ui "FSharp.Graphics" ui.Theme.Surface ui.Theme.TextMuted)
             shift (w - bw - 20.0f) 9 buttons
         ]
 
@@ -220,10 +276,10 @@ module View =
                 rectangle { bounds 0.0f 0.0f w h; fill ui.Theme.Background }
                 shift PaletteW TopH (canvas ui m canvasW canvasH)
                 // side panels
-                shift 0.0f TopH (Group [ rectangle { bounds 0.0f 0.0f PaletteW canvasH; fill ui.Theme.Surface }
+                shift 0.0f TopH (Group [ rectangle { bounds 0.0f 0.0f PaletteW canvasH; fill ui.Theme.Surface; shadow 2 0 10 (rgba 0 0 0 60) }
                                          rectangle { bounds (PaletteW - 1.0f) 0.0f 1.0f canvasH; fill ui.Theme.Border }
                                          shift 16 16 (palette ui) ])
-                shift (w - InspectorW) TopH (Group [ rectangle { bounds 0.0f 0.0f InspectorW canvasH; fill ui.Theme.Surface }
+                shift (w - InspectorW) TopH (Group [ rectangle { bounds 0.0f 0.0f InspectorW canvasH; fill ui.Theme.Surface; shadow -2 0 10 (rgba 0 0 0 60) }
                                                      rectangle { bounds 0.0f 0.0f 1.0f canvasH; fill ui.Theme.Border }
                                                      shift 16 16 (inspector ui m canvasW) ])
                 (if m.ShowCode then shift PaletteW (h - CodeH) (codePanel ui m canvasW) else Empty)

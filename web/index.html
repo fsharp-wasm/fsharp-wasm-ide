@@ -33,7 +33,10 @@
     import { mount } from "../lib/runtime/runtime/gfx.js";
 
     const instance = await boot({ wasm: new URL("../dist/WidgetEditor.wasm", import.meta.url), entry: "start" });
-    if (instance) mount(instance, "gfx");
+    if (instance) {
+      mount(instance, "gfx");
+      document.getElementById("status-banner").hidden = true;      // the status is for errors; a loaded editor needs no banner
+    }
   </script>
 </body>
 </html>

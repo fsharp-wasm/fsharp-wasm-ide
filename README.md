@@ -13,6 +13,8 @@ Scene ──Resolve─▶ Emit ─▶ canvas FSharp.Graphics.Canvas + runtime/gf
 scripted pointer + keys ─▶ model checked, PNGs written                  tests/WidgetEditor.Session (headless, software renderer)
 ```
 
+![The widget editor](docs/images/widget-editor.png)
+
 Live: <https://fsharp-wasm.github.io/fsharp-wasm-runtime/demos/widget-editor/>
 
 | path | what it is |
