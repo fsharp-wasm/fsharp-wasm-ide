@@ -4,7 +4,7 @@
 ///   onPointer(kind, x, y, button)   kind 0 down, 1 up, 2 move, 3 leave
 ///   onWheel(dx, dy)
 ///   onKey(kind)                     kind 0 down, 1 up; the key name is fetched with Gfx.pendingKey
-///   frame(nowMs)                    build, resolve, draw (every frame: the editor owns a model and a caret)
+///   frame(nowMs)                    build, resolve, draw (when the model changed, an event was taken, or a caret blinks: see CanvasHost.Frame)
 module FSharp.Wasm.Ide.Browser.WidgetEditor
 
 open FSharp.Math
@@ -18,10 +18,16 @@ type Editor() =
     let text = CanvasTextEngine() :> ITextEngine
     let host = CanvasHost text
     let app = App text
+    let mutable seen = -1
 
     member _.Resize(w: float32, h: float32, r: float32) = host.Resize(w, h, r)
     member _.Input(evt: InputEvent) = host.Input evt
-    member _.Frame(nowMs: float) = host.Frame(nowMs, true, 0.0f, fun time size -> app.Build(time, size))
+    member _.Frame(nowMs: float) =
+        // the model changes in `app.Dispatch`, which a handler calls; an event no handler took cannot change it, but this keeps it true whatever calls Dispatch
+        if app.Version <> seen then
+            seen <- app.Version
+            host.Invalidate()
+        host.Frame(nowMs, false, 0.0f, fun time size -> app.Build(time, size))
 
 let private editor = Editor()
 
