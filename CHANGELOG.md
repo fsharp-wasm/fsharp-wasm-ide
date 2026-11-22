@@ -18,6 +18,7 @@ All notable changes to this repository are documented here (newest first).
   Chromium test 16 (undo and redo compared pixel for pixel below the bar, a palette drag, Ctrl+Z, Escape). The module is 245 369 bytes.
 
 ### Changed
+- The libraries move to fsharp-wasm-graphics 4299f36 (a key before the first pointer movement is no longer dropped, a widget in a `ScrollView` can be reached, two keys within one frame each meet the state the one before made) and fsharp-wasm-runtime dc56bd7; the compiler to e820a4e. Unchanged by it, measured 2026-11-22: the Chromium test (16 checks) and the session test (24).
 - The libraries are pinned at the revisions that have the keyboard and pointer routing the editor now relies on (fsharp-wasm-graphics 8f09eff:
   keys and the wheel go to the handlers of the current frame, `Role.None` hides a subtree; fsharp-wasm-runtime 5b1fd6a: Undo / Redo shortcuts;
   fsharp-wasm-core 529ec49: `Ops.insertAt`) and the compiler at 65d6d2e (a string as `seq<char>`, equality of `bool[]` and `byte[]`).
