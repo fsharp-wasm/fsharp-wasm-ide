@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>The editor drawn two ways</title>
+<!-- redraw.mjs: the same editor twice, side by side: a draws what changed, b draws every frame whole (?fullframes) -->
+<style>body { margin: 0; display: flex; gap: 8px } iframe { border: 0; width: 1300px; height: 1100px }</style>
+<iframe id="a" src="../../web/"></iframe>
+<iframe id="b" src="../../web/?fullframes"></iframe>
+<script>
+  const canvas = (id) => document.getElementById(id).contentDocument.getElementById('gfx');
+  // how two pictures differ: pixels that differ by more than `tolerance` of 255 in a channel, and the largest difference
+  const difference = (a, b, width, tolerance) => {
+    let beyond = 0, any = 0, largest = 0, first = null;
+    for (let i = 0; i < a.length; i += 4) {
+      const d = Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2]), Math.abs(a[i + 3] - b[i + 3]));
+      if (d > 0) any++;
+      if (d > largest) largest = d;
+      if (d > tolerance) { beyond++; first ??= { x: (i / 4) % width, y: Math.floor(i / 4 / width) }; }
+    }
+    return { sizes: true, any, beyond, largest, first };
+  };
+  const picture = (id) => { const c = canvas(id); return { w: c.width, h: c.height, data: c.getContext('2d').getImageData(0, 0, c.width, c.height).data }; };
+  const same = (a, b, tolerance) => (a.w !== b.w || a.h !== b.h ? { sizes: false } : difference(a.data, b.data, a.w, tolerance));
+  window.compare = (tolerance) => same(picture('a'), picture('b'), tolerance);
+  // a picture kept for later: the middle of a gesture that one mouse cannot make in both editors at once
+  window.shots = {};
+  window.snap = (id) => { window.shots[id] = picture(id); };
+  window.compareSnaps = (tolerance) => same(window.shots.a, window.shots.b, tolerance);
+</script>

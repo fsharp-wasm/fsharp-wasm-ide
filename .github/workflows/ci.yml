@@ -98,6 +98,9 @@ jobs:
       - name: Widget editor in Chromium
         run: node tests/e2e/editor.mjs
 
+      - name: A frame that redraws only what changed is the same picture (the editor twice, pixel by pixel)
+        run: node tests/e2e/redraw.mjs
+
       - uses: actions/upload-artifact@v7
         with:
           name: WidgetEditor.wasm
