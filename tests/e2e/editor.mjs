@@ -48,8 +48,8 @@ try {
   check('hovering a button redraws it', !same((await look()).px, beforeHover));
   // the text field of the inspector has the focus: its caret blinks, so frames keep coming; they stop when the focus is elsewhere
   await page.mouse.click(...at(1055, 137)); await page.waitForTimeout(150);
-  const blinking = await drawn(700);
-  check('a text field that has the focus keeps drawing frames (its caret blinks)', blinking >= 10, `${blinking} frames in 700 ms`);
+  const blinking = await drawn(2100);
+  check('a text field that has the focus draws a frame at each step of its caret (twice a second), not every 16 ms', blinking >= 3 && blinking <= 8, `${blinking} frames in 2100 ms`);
   await page.mouse.click(...at(95, 78)); await page.waitForTimeout(250);
   const quiet = await drawn(700);
   check('and the frames stop when the focus has left it', quiet === 0, `${quiet} frames in 700 ms`);
