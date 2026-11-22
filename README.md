@@ -1,5 +1,9 @@
 # fsharp-wasm-ide
 
+<!-- platform -->
+> **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: editors and applications. Builds on [core](https://github.com/fsharp-wasm/fsharp-wasm-core), [graphics](https://github.com/fsharp-wasm/fsharp-wasm-graphics), [runtime](https://github.com/fsharp-wasm/fsharp-wasm-runtime). Used by nobody; it is a gate of the compiler.
+> [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
+
 Tools for building F# programs that run as WebAssembly GC, written in F# and compiled by
 [fsharp-wasm](https://github.com/fsharp-wasm/fsharp-wasm). The first tool is the **widget editor**: a visual editor for
 [`FSharp.Graphics`](https://github.com/fsharp-wasm/fsharp-wasm-graphics) widget layouts — a palette, a design surface, an inspector, a
