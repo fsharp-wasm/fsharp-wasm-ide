@@ -66,8 +66,10 @@ profile.samples.forEach((id, i) => {
   const dt = profile.timeDeltas[i + 1] ?? profile.timeDeltas[i];
   const f = byId.get(id).callFrame;
   const name = f.functionName || '(anonymous)';
+  // the profiler names the browser's own methods (fill, roundRect, fillText ...) without a url, and the call from the module into JavaScript `wasm-to-js`
   const c = name === '(idle)' ? 'idle' : name === '(garbage collector)' ? 'garbage collector' : name === '(program)' ? 'the browser itself (raster, paint, compositing)'
-    : /gfx\.js/.test(f.url) ? 'JavaScript glue' : /\.wasm$/.test(f.url) ? 'F# (the module)' : 'other JavaScript';
+    : name === 'wasm-to-js' ? 'the crossing from the module (wasm-to-js)'
+    : /gfx\.js/.test(f.url) ? 'JavaScript glue' : /^wasm:|\.wasm$/.test(f.url) ? 'F# (the module)' : f.url === '' ? 'Canvas 2D methods (the browser\'s, called by the glue)' : 'other JavaScript';
   where.set(c, (where.get(c) ?? 0) + dt);
   if (c !== 'idle') busy += dt;
 });
