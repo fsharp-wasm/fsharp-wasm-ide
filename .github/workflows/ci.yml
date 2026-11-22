@@ -7,7 +7,7 @@ on:
 
 env:
   # the compiler the module is built with (a fsharp-wasm revision; replace by a release binary when there is one)
-  COMPILER_REF: 7c7fbca52b8c4a5e6ad8eb21d41dd52f22553e00
+  COMPILER_REF: 65d6d2e119ebe09a809a87b5491cc6d0d3dac0ce
 
 jobs:
   # The editor under .NET: it builds, and the scripted session passes through the real hit tester and key path.

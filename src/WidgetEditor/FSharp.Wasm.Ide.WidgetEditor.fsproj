@@ -17,6 +17,9 @@
     <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Data/FSharp.Wasm.Data.fsproj" />
+    <ProjectReference Include="../../lib/fsharp-wasm-core/FSharp.Wasm.Edit/FSharp.Wasm.Edit.fsproj" />
+    <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Interact/FSharp.Graphics.Interact.fsproj" />
     <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Tea/FSharp.Graphics.Tea.fsproj" />
     <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.SceneDsl/FSharp.Graphics.SceneDsl.fsproj" />
     <ProjectReference Include="../../lib/graphics/src/FSharp.Graphics.Widgets/FSharp.Graphics.Widgets.fsproj" />

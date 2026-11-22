@@ -6,6 +6,7 @@ open FSharp.Graphics.Core
 open FSharp.Graphics.Scene
 open FSharp.Graphics.SceneDsl
 open FSharp.Graphics.Widgets
+open FSharp.Graphics.Interact
 
 module View =
 
@@ -76,10 +77,18 @@ module View =
 
     /// Drag-to-move overlay. Pointer events carry window coordinates, so the drag is relative to
     /// the press point; the closure (created at press time) keeps receiving the captured moves.
-    let private dragOverlay (ui: Ui<Msg>) (n: Node) (b: Rect) : Scene =
+    let private dragOverlay (ui: Ui<Msg>) (selected: bool) (n: Node) (b: Rect) : Scene =
         let down : Vec2 voption ref = ref ValueNone
         let sx, sy = n.X, n.Y
-        Reactive(
+        // An element being designed is a picture of a widget, not a live one: for the keyboard and for assistive technology it is this one control, which takes the focus
+        // and with it the selection, and which the arrow keys move.
+        let name = Kind.name n.Kind + (if Kind.hasText n.Kind && n.Text <> "" then ": " + n.Text else "")
+        let described (overlay: Scene) =
+            Ui.semantic ui ("node-" + string n.Id) Role.Button name
+                (fun sem -> { sem with Description = "Arrow keys move it, Delete removes it"; Selected = selected })
+                (fun a -> match a with SemanticAction.Activate -> ui.Send(Select(Some n.Id)) | _ -> ())
+                overlay
+        described <| Reactive(
             (fun e ->
                 match e with
                 | PointerDown(p, 0) ->
@@ -126,7 +135,8 @@ module View =
             Rect.create b0.X b0.Y (Scalar.max' b0.W 24.0f) (Scalar.max' b0.H 18.0f)
         let node (n: Node) : Scene =
             let widget = nodeWidget dui n
-            let body = if m.Preview then widget else Group [ widget; dragOverlay chrome n (boundsOf n) ]
+            let picture = Semantic(Semantics.create "" Role.None "", widget)
+            let body = if m.Preview then widget else Group [ picture; dragOverlay chrome (m.Selected = Some n.Id) n (boundsOf n) ]
             shift n.X n.Y body
         // What marks the selection is drawn above every element, so that a neighbour never covers the handles or the size.
         let selection : Scene =
@@ -156,19 +166,66 @@ module View =
 
     // ---- chrome -----------------------------------------------------------------------------
 
-    let private palette (ui: Ui<Msg>) : Scene =
-        let items =
-            [ for k in Kind.all ->
-                Group [ Button.view ui ("pal-" + Kind.name k)
-                            { Button.make (Kind.name k) (fun () -> ui.Send(Add k)) with
-                                Variant = Button.Secondary; Width = ValueSome 158.0f }
-                        shift 12.0f 10.0f (icon ui.Theme k) ] ]
-        column {
-            gap 8
-            child (Label.view ui Label.Heading "Elements")
-            child (Label.view ui Label.Caption "Click to add to the surface")
-            children items
-        }
+    /// The palette sits at (16, 16) of its panel, which starts below the top bar.
+    let private paletteOrigin = Vec2.create 16.0f (TopH + 16.0f)
+    let private paletteCaption = "Click or drag to add"
+
+    let private entryButton (ui: Ui<Msg>) (k: Kind) : Scene =
+        Button.view ui ("pal-" + Kind.name k)
+            { Button.make (Kind.name k) (fun () -> ui.Send(Add k)) with Variant = Button.Secondary; Width = ValueSome 158.0f }
+
+    /// Where each entry is, in the palette's own space: the heading, the caption and then one entry below the other, 8 px apart.  They are placed here and not by a column, so
+    /// that the place of an entry in the window is known: a drag starts on it, and the pointer is then reported in its space.
+    let private paletteRects (ui: Ui<Msg>) : (Kind * Rect) list =
+        let head = (Ui.measure ui (Label.view ui Label.Heading "Elements")).H
+        let caption = (Ui.measure ui (Label.view ui Label.Caption paletteCaption)).H
+        let _, placed =
+            Kind.all
+            |> List.fold (fun (y, acc) k ->
+                let h = (Ui.measure ui (entryButton ui k)).H
+                y + h + 8.0f, (k, Rect.create 0.0f y 158.0f h) :: acc) (head + 8.0f + caption + 8.0f, [])
+        List.rev placed
+
+    /// The press, the moves and the release of one entry.  Its handler sees the pointer in the entry's own space; the model wants the window's: the entry's corner, then the pointer.
+    /// What the release means (an entry that was only clicked is added, a dragged one lands where it is let go) is the model's: it knows whether the pointer moved.
+    let private entryOverlay (ui: Ui<Msg>) (canvas: Rect) (k: Kind) (r: Rect) : Scene =
+        let at (p: Vec2) = Vec2.add (Vec2.add paletteOrigin (Vec2.create r.X r.Y)) p
+        let pressed = ref false
+        shift r.X r.Y
+            (Reactive(
+                (fun e ->
+                    match e with
+                    | PointerDown(p, 0) -> pressed.Value <- true; ui.Send(DragPress(k, at p)); true
+                    | PointerMove p when pressed.Value -> ui.Send(DragMove(at p, canvas)); true
+                    | PointerUp(p, 0) when pressed.Value -> pressed.Value <- false; ui.Send(DragRelease(at p, canvas)); true
+                    | _ -> false),
+                rectangle { bounds 0.0f 0.0f r.W r.H; fill Color.Transparent }))
+
+    let private palette (ui: Ui<Msg>) (canvas: Rect) : Scene =
+        let head = Label.view ui Label.Heading "Elements"
+        let entries =
+            [ for (k, r) in paletteRects ui ->
+                Group [ shift r.X r.Y (entryButton ui k)
+                        shift (r.X + 12.0f) (r.Y + 10.0f) (icon ui.Theme k)
+                        entryOverlay ui canvas k r ] ]
+        Group [ head
+                shift 0.0f ((Ui.measure ui head).H + 8.0f) (Label.view ui Label.Caption paletteCaption)
+                Group entries ]
+
+    /// While an entry is dragged: its name at the pointer, and over the surface the frame where it would land, at the size it has.
+    let private dragFeedback (ui: Ui<Msg>) (m: Model) (canvas: Rect) : Scene =
+        match m.Drag with
+        | Dragging (kind, _, at, _) ->
+            let th = if m.DarkDesign then Theme.dark else Theme.light
+            let design = { ui with Theme = th; State = UiState.empty }
+            let extent = Ui.measure design (nodeWidget design (Model.newNode 0 kind 0.0f 0.0f))
+            let corner = Vec2.create (canvas.X + Model.snap (at.X - canvas.X)) (canvas.Y + Model.snap (at.Y - canvas.Y))
+            Group [ (if Rect.contains at canvas then
+                        rectangle { bounds corner.X corner.Y (Scalar.max' extent.W 24.0f) (Scalar.max' extent.H 18.0f); radius 4.0f
+                                    fill (Color.withAlpha 0.14f ui.Theme.Accent); stroke ui.Theme.Accent 1.5f }
+                     else Empty)
+                    shift (at.X + 14.0f) (at.Y + 14.0f) (chip ui (Kind.name kind) ui.Theme.Accent ui.Theme.OnAccent) ]
+        | _ -> Empty
 
     let private field (ui: Ui<Msg>) (caption: string) (control: Scene) : Scene =
         column { gap 4; child (Label.view ui Label.Caption caption); child control }
@@ -227,6 +284,10 @@ module View =
         let buttons =
             row {
                 gap 8
+                child (Button.view ui "top-undo"
+                        { Button.make "Undo" (fun () -> send Undo) with Variant = Button.Secondary; Disabled = not (Model.canUndo m) })
+                child (Button.view ui "top-redo"
+                        { Button.make "Redo" (fun () -> send Redo) with Variant = Button.Secondary; Disabled = not (Model.canRedo m) })
                 child (Button.view ui "top-preview"
                         { Button.make (if m.Preview then "Preview: on" else "Preview: off") (fun () -> send TogglePreview) with
                             Variant = (if m.Preview then Button.Primary else Button.Secondary) })
@@ -271,18 +332,25 @@ module View =
         let ui = { ui with State = m.Ui }
         let canvasW = w - PaletteW - InspectorW
         let canvasH = h - TopH
+        let canvasRect = Rect.create PaletteW TopH canvasW canvasH
+        // The regions, in the order the keyboard walks them: the toolbar, the elements, the surface, the inspector (the scene draws the toolbar last, on top).
+        let region (id: string) (role: Role) (name: string) (order: int) (content: Scene) : Scene =
+            Semantic({ Semantics.create id role name with Order = order }, content)
         let page =
             Group [
                 rectangle { bounds 0.0f 0.0f w h; fill ui.Theme.Background }
-                shift PaletteW TopH (canvas ui m canvasW canvasH)
+                region "surface" Role.Region "Design surface" 2 (shift PaletteW TopH (canvas ui m canvasW canvasH))
                 // side panels
-                shift 0.0f TopH (Group [ rectangle { bounds 0.0f 0.0f PaletteW canvasH; fill ui.Theme.Surface; shadow 2 0 10 (rgba 0 0 0 60) }
-                                         rectangle { bounds (PaletteW - 1.0f) 0.0f 1.0f canvasH; fill ui.Theme.Border }
-                                         shift 16 16 (palette ui) ])
-                shift (w - InspectorW) TopH (Group [ rectangle { bounds 0.0f 0.0f InspectorW canvasH; fill ui.Theme.Surface; shadow -2 0 10 (rgba 0 0 0 60) }
-                                                     rectangle { bounds 0.0f 0.0f 1.0f canvasH; fill ui.Theme.Border }
-                                                     shift 16 16 (inspector ui m canvasW) ])
+                region "elements" Role.Region "Elements" 1
+                    (shift 0.0f TopH (Group [ rectangle { bounds 0.0f 0.0f PaletteW canvasH; fill ui.Theme.Surface; shadow 2 0 10 (rgba 0 0 0 60) }
+                                              rectangle { bounds (PaletteW - 1.0f) 0.0f 1.0f canvasH; fill ui.Theme.Border }
+                                              shift 16 16 (palette ui canvasRect) ]))
+                region "inspector" Role.Region "Inspector" 3
+                    (shift (w - InspectorW) TopH (Group [ rectangle { bounds 0.0f 0.0f InspectorW canvasH; fill ui.Theme.Surface; shadow -2 0 10 (rgba 0 0 0 60) }
+                                                          rectangle { bounds 0.0f 0.0f 1.0f canvasH; fill ui.Theme.Border }
+                                                          shift 16 16 (inspector ui m canvasW) ]))
                 (if m.ShowCode then shift PaletteW (h - CodeH) (codePanel ui m canvasW) else Empty)
-                topBar ui m w
+                region "toolbar" Role.Toolbar "Editor actions" 0 (topBar ui m w)
+                dragFeedback ui m canvasRect
             ]
         Ui.root ui (fun k -> ui.Send(Key k)) page

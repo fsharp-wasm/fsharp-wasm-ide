@@ -2,6 +2,9 @@ namespace FSharp.Wasm.Ide.WidgetEditor
 
 open System
 open FSharp.Math
+open FSharp.Wasm.Data
+open FSharp.Wasm.Edit
+open FSharp.Graphics.Interact
 open FSharp.Graphics.Tea
 open FSharp.Graphics.Widgets
 
@@ -34,9 +37,16 @@ type Node =
       Value: float32
       Variant: Button.Variant }
 
+/// What the log of changes keeps: the elements on the surface and which one is selected, so that undoing an addition or a deletion puts the selection back where it was.
+type Snapshot = { Nodes: Node list; NextId: int; Selected: int option }
+
 type Model =
     { Nodes: Node list
       NextId: int
+      /// The undo log: every change of the elements is a `Replace` of the whole set; the moves of one drag, the keystrokes of one text and the nudges of one element are one step.
+      History: History<Snapshot>
+      /// An element of the palette being pressed or dragged (window coordinates); where it would land is where the pointer is.
+      Drag: Session<Kind>
       Selected: int option
       Ui: UiState
       DarkDesign: bool
@@ -59,6 +69,13 @@ type Msg =
     | Delete
     | Duplicate
     | BringToFront
+    | Undo
+    | Redo
+    /// A press on a palette entry, a move of the pointer, the release: where (window coordinates) and the design surface in the window (the one place a drop lands).
+    | DragPress of Kind * Vec2
+    | DragMove of Vec2 * Rect
+    | DragRelease of Vec2 * Rect
+    | DragCancel
     | Key of string
     | ToggleTheme
     | TogglePreview
@@ -89,7 +106,7 @@ module Model =
               mk 3 KText 48.0f 128.0f (fun n -> { n with W = 280.0f })
               mk 4 KCheck 48.0f 184.0f (fun n -> { n with Text = "Remember me"; On = true })
               mk 5 KButton 48.0f 224.0f (fun n -> { n with Text = "Sign in"; W = 280.0f }) ]
-        { Nodes = nodes; NextId = 6; Selected = Some 5; Ui = UiState.empty
+        { Nodes = nodes; NextId = 6; History = History.create 200; Drag = Idle; Selected = Some 5; Ui = UiState.empty
           DarkDesign = true; Preview = false; ShowCode = false; CodeScroll = 0.0f; VariantOpen = false }, Cmd.none
 
     let private mapNode id f (m: Model) =
@@ -99,15 +116,37 @@ module Model =
         m.Selected |> Option.bind (fun id -> m.Nodes |> List.tryFind (fun n -> n.Id = id))
 
 
-    let update (m: Model) (msg: Msg) : Model * Cmd<Msg> =
-        let m' =
+    /// A new element of `kind` with its corner at (x, y) on the surface, selected.
+    let private addAt (kind: Kind) (x: float32) (y: float32) (m: Model) : Model =
+        let n = newNode m.NextId kind (snap x) (snap y)
+        { m with Nodes = m.Nodes @ [ n ]; NextId = m.NextId + 1; Selected = Some n.Id }
+
+    /// A new element where the palette puts it: cascaded, so that new elements never stack exactly on top of each other.
+    let private addCascaded (kind: Kind) (m: Model) : Model =
+        let k = float32 (m.Nodes.Length % 8)
+        addAt kind (80.0f + k * 24.0f) (80.0f + k * 24.0f) m
+
+    /// The design surface as the one place a drop can land.
+    let private surface (canvas: Rect) : Slot = { Id = 0; Bounds = canvas; Flow = Flow.Down; Nests = true }
+
+    let private step (m: Model) (msg: Msg) : Model =
             match msg with
             | UiMsg u -> { m with Ui = UiState.update m.Ui u }
-            | Add kind ->
-                // cascade new elements so they never stack exactly on top of each other
-                let k = float32 (m.Nodes.Length % 8)
-                let n = newNode m.NextId kind (snap (80.0f + k * 24.0f)) (snap (80.0f + k * 24.0f))
-                { m with Nodes = m.Nodes @ [ n ]; NextId = m.NextId + 1; Selected = Some n.Id }
+            // they act on the log, not on the elements: `update` answers them before a step is taken
+            | Undo | Redo -> m
+            | Add kind -> addCascaded kind m
+            | DragPress(kind, p) -> { m with Drag = Drag.press kind p }
+            | DragMove(p, canvas) -> { m with Drag = Drag.move [ surface canvas ] p m.Drag }
+            | DragRelease(p, canvas) ->
+                let landed = Drag.move [ surface canvas ] p m.Drag
+                let m1 = { m with Drag = Idle }
+                (match m.Drag, Drag.release landed with
+                 // let go without having moved: a click on the entry adds it
+                 | Pressed (kind, _), _ -> addCascaded kind m1
+                 // let go over the surface: the element lands there
+                 | _, Some (kind, _) when Rect.contains p canvas -> addAt kind (p.X - canvas.X) (p.Y - canvas.Y) m1
+                 | _ -> m1)
+            | DragCancel -> { m with Drag = Idle }
             | Select s -> { m with Selected = s }
             | MoveTo(id, x, y) -> mapNode id (fun n -> { n with X = max 0.0f x; Y = max 0.0f y }) m
             | SetW(id, w) -> mapNode id (fun n -> { n with W = max 40.0f (snap w) }) m
@@ -135,29 +174,14 @@ module Model =
             | ToggleCode -> { m with ShowCode = not m.ShowCode; CodeScroll = 0.0f }
             | ScrollCode v -> { m with CodeScroll = v }
             | Key key ->
-                let order (n: Node) =
-                    [ if Kind.hasText n.Kind then yield "insp-text"
-                      if n.Kind = KButton then yield "insp-variant"
-                      yield "insp-x"; yield "insp-y"
-                      if Kind.hasWidth n.Kind then yield "insp-w"
-                      if Kind.hasValue n.Kind then yield "insp-v"
-                      yield "insp-dup"; yield "insp-front"; yield "insp-del" ]
+                // Tab, Enter, Space and the arrows on a focused control are the toolkit's (Ui.root): what reaches here is typing into the text of an element, and the keys
+                // of the surface: the arrows nudge the selected element, Delete removes it, Escape deselects.
                 match m.Ui.Focus, selectedNode m with
+                | _ when key = "Escape" && m.Drag <> Idle -> { m with Drag = Idle }
                 | Some "insp-text", Some n when key <> "Tab" ->
                     match key with
                     | "Enter" | "Escape" -> { m with Ui = UiState.update m.Ui UiMsg.Blur }
                     | k -> mapNode n.Id (fun n -> { n with Text = TextEdit.apply m.Ui.Shift k n.Text }) m
-                | _, Some n when key = "Tab" ->
-                    { m with Ui = UiState.cycleFocus (order n) m.Ui.Shift m.Ui }
-                // keyboard control of a focused slider: arrows step by 5 % of its range
-                | Some f, Some n when (key = "Left" || key = "Right") && f.StartsWith "insp-" && f <> "insp-text" ->
-                    let dir = if key = "Left" then -1.0f else 1.0f
-                    match f with
-                    | "insp-x" -> mapNode n.Id (fun n -> { n with X = max 0.0f (snap (n.X + dir * 8.0f)) }) m
-                    | "insp-y" -> mapNode n.Id (fun n -> { n with Y = max 0.0f (snap (n.Y + dir * 8.0f)) }) m
-                    | "insp-w" -> mapNode n.Id (fun n -> { n with W = max 40.0f (n.W + dir * 8.0f) }) m
-                    | "insp-v" -> mapNode n.Id (fun n -> { n with Value = Scalar.clamp 0.0f 1.0f (n.Value + dir * 0.05f) }) m
-                    | _ -> m
                 | _, Some n ->
                     let d = 8.0f
                     match key with
@@ -169,4 +193,58 @@ module Model =
                     | "Escape" -> { m with Selected = None }
                     | _ -> m
                 | _ -> m
-        m', Cmd.none
+
+    let private snapshot (m: Model) : Snapshot = { Nodes = m.Nodes; NextId = m.NextId; Selected = m.Selected }
+
+    /// The set of elements as one item, so that the log of changes is `Replace [0]` of it.
+    let private shape : Shape<Snapshot> = { Kids = (fun _ -> []); WithKids = (fun s _ -> s) }
+
+    /// What ends a step of the log, so that the next change is a step of its own: another element, another text.
+    let private closed (h: History<Snapshot>) : History<Snapshot> = { h with Open = "" }
+
+    /// Which steps of the log one message continues: the moves of one drag, the width of one drag, the keystrokes into one text, the nudges of one element are one step.
+    let private logKey (m: Model) (msg: Msg) : string =
+        let sel = (match m.Selected with Some id -> string id | None -> "")
+        match msg, m.Ui.Focus with
+        | MoveTo(id, _, _), _ -> "move:" + string id
+        | SetW(id, _), _ -> "w:" + string id
+        | SetText(id, _), _ -> "text:" + string id
+        | SetValue(id, _), _ -> "value:" + string id
+        | Key ("Delete" | "Backspace"), None -> ""
+        | Key "Tab", _ | Key "Enter", _ | Key "Escape", _ -> ""
+        | Key _, Some f when f.StartsWith "insp-" -> f + ":" + sel
+        | Key _, None -> "nudge:" + sel
+        | _ -> ""
+
+    let private restore (s: Snapshot) (h: History<Snapshot>) (m: Model) : Model =
+        { m with Nodes = s.Nodes; NextId = s.NextId; Selected = s.Selected; History = h; VariantOpen = false }
+
+    let canUndo (m: Model) : bool = History.canUndo m.History
+    let canRedo (m: Model) : bool = History.canRedo m.History
+
+    let update (m: Model) (msg: Msg) : Model * Cmd<Msg> =
+        match msg with
+        | Undo | Key "Undo" ->
+            (match History.undo shape [ snapshot m ] m.History with
+             | Some ([ s ], h) -> restore s h m
+             | _ -> m), Cmd.none
+        | Redo | Key "Redo" ->
+            (match History.redo shape [ snapshot m ] m.History with
+             | Some ([ s ], h) -> restore s h m
+             | _ -> m), Cmd.none
+        // the pointer and the focus move all the time and change no element: no log, no comparison
+        | UiMsg u ->
+            let m' = step m msg
+            // another control gets the focus: what is typed next is a change of its own; the focus of an element on the surface is its selection
+            (match u with
+             | UiMsg.Focus id when id.StartsWith "node-" ->
+                { m' with Selected = Numbers.parseInt (id.Substring 5); History = closed m'.History }
+             | UiMsg.Focus _ | UiMsg.Blur -> { m' with History = closed m'.History }
+             | _ -> m'), Cmd.none
+        | _ ->
+            let m' = step m msg
+            if m'.Nodes = m.Nodes && m'.NextId = m.NextId then
+                // another selection ends the step in progress (the next drag is another step)
+                (match msg with Select _ -> { m' with History = closed m'.History } | _ -> m'), Cmd.none
+            else
+                { m' with History = History.record (logKey m msg) (Replace ([ 0 ], snapshot m, snapshot m')) m.History }, Cmd.none
