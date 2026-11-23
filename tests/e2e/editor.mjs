@@ -46,6 +46,13 @@ try {
   const beforeHover = (await look()).px;
   await page.mouse.move(...at(906, 26)); await page.waitForTimeout(250);
   check('hovering a button redraws it', !same((await look()).px, beforeHover));
+  // the cursor: the pointing hand over a button, the open hand over an entry of the palette, the text cursor over a field, the default one over the empty surface
+  const cursor = () => page.locator('#gfx').evaluate((c) => c.style.cursor);
+  const cursorAt = async (x, y) => { await page.mouse.move(...at(x, y)); await page.waitForTimeout(120); return cursor(); };
+  check('the pointing hand over a button', (await cursorAt(906, 26)) === 'pointer');
+  check('the open hand over an entry of the palette', (await cursorAt(95, 179)) === 'grab');
+  check('the default cursor over the empty surface', (await cursorAt(600, 700)) === 'default');
+  check('the text cursor over a text field of the inspector', (await cursorAt(1055, 137)) === 'text');
   // the text field of the inspector has the focus: its caret blinks, so frames keep coming; they stop when the focus is elsewhere
   await page.mouse.click(...at(1055, 137)); await page.waitForTimeout(150);
   const blinking = await drawn(2100);
@@ -71,7 +78,9 @@ try {
     await release();
     return during;
   };
-  const during = await drag(() => page.mouse.up());
+  let closed = '';
+  const during = await drag(async () => { closed = await cursor(); await page.mouse.up(); });
+  check('the closed hand while an entry is dragged, wherever the pointer is', closed === 'grabbing', closed);
   const h2 = await settled();
   check('a dragged entry shows where it would land', !same(during, h1));
   check('dropped on the surface, the element is added', !same(h2, h1) && !same(h2, during));
@@ -79,6 +88,7 @@ try {
   check('Ctrl+Z takes the dropped element away', same(await settled(), h1));
   await drag(async () => { await page.keyboard.press('Escape'); await page.mouse.up(); });
   check('Escape cancels a drag: nothing is added', same(await settled(), h1));
+  check('the cursor of moving over an element on the surface', (await cursorAt(378, 293)) === 'move');
   await changed('the selected button is dragged', async () => {
     await page.mouse.move(...at(378, 293)); await page.mouse.down();
     await page.mouse.move(...at(520, 450), { steps: 8 }); await page.mouse.up();

@@ -88,7 +88,7 @@ module View =
                 (fun sem -> { sem with Description = "Arrow keys move it, Delete removes it"; Selected = selected })
                 (fun a -> match a with SemanticAction.Activate -> ui.Send(Select(Some n.Id)) | _ -> ())
                 overlay
-        described <| Reactive(
+        described <| Cursor(CursorKind.Move, Reactive(
             (fun e ->
                 match e with
                 | PointerDown(p, 0) ->
@@ -103,13 +103,13 @@ module View =
                     down.Value <- ValueNone
                     true
                 | _ -> false),
-            rectangle { bounds b; fill Color.Transparent })
+            rectangle { bounds b; fill Color.Transparent }))
 
     let private widthHandle (ui: Ui<Msg>) (th: Theme) (n: Node) (b: Rect) : Scene =
         let down : float32 voption ref = ref ValueNone
         let w0 = b.W
         let handle = rectangle { bounds (b.X + b.W + 1.0f) (b.Y + b.H * 0.5f - 9.0f) 8.0f 18.0f; radius 3.0f; fill th.Accent }
-        Reactive(
+        Cursor(CursorKind.ResizeEW, Reactive(
             (fun e ->
                 match e with
                 | PointerDown(p, 0) -> down.Value <- ValueSome p.X; true
@@ -117,7 +117,7 @@ module View =
                     ui.Send(SetW(n.Id, w0 + p.X - down.Value.Value)); true
                 | PointerUp _ when down.Value.IsSome -> down.Value <- ValueNone; true
                 | _ -> false),
-            handle)
+            handle))
 
     let private canvas (chrome: Ui<Msg>) (m: Model) (w: float32) (h: float32) : Scene =
         let th = if m.DarkDesign then Theme.dark else Theme.light
@@ -192,14 +192,14 @@ module View =
         let at (p: Vec2) = Vec2.add (Vec2.add paletteOrigin (Vec2.create r.X r.Y)) p
         let pressed = ref false
         shift r.X r.Y
-            (Reactive(
+            (Cursor(CursorKind.Grab, Reactive(
                 (fun e ->
                     match e with
                     | PointerDown(p, 0) -> pressed.Value <- true; ui.Send(DragPress(k, at p)); true
                     | PointerMove p when pressed.Value -> ui.Send(DragMove(at p, canvas)); true
                     | PointerUp(p, 0) when pressed.Value -> pressed.Value <- false; ui.Send(DragRelease(at p, canvas)); true
                     | _ -> false),
-                rectangle { bounds 0.0f 0.0f r.W r.H; fill Color.Transparent }))
+                rectangle { bounds 0.0f 0.0f r.W r.H; fill Color.Transparent })))
 
     let private palette (ui: Ui<Msg>) (canvas: Rect) : Scene =
         let head = Label.view ui Label.Heading "Elements"
