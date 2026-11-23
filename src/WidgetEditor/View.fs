@@ -212,19 +212,28 @@ module View =
                 shift 0.0f ((Ui.measure ui head).H + 8.0f) (Label.view ui Label.Caption paletteCaption)
                 Group entries ]
 
-    /// While an entry is dragged: its name at the pointer, and over the surface the frame where it would land, at the size it has.
+    /// While an entry is dragged: the surface that takes the drop says so, over it the widget itself (a picture of it, half transparent) is at the place where it would land, in the frame of the
+    /// size it has, and its name is at the pointer.
     let private dragFeedback (ui: Ui<Msg>) (m: Model) (canvas: Rect) : Scene =
         match m.Drag with
         | Dragging (kind, _, at, _) ->
             let th = if m.DarkDesign then Theme.dark else Theme.light
             let design = { ui with Theme = th; State = UiState.empty }
-            let extent = Ui.measure design (nodeWidget design (Model.newNode 0 kind 0.0f 0.0f))
+            let widget = nodeWidget design (Model.newNode 0 kind 0.0f 0.0f)
+            let extent = Ui.measure design widget
             let corner = Vec2.create (canvas.X + Model.snap (at.X - canvas.X)) (canvas.Y + Model.snap (at.Y - canvas.Y))
-            Group [ (if Rect.contains at canvas then
-                        rectangle { bounds corner.X corner.Y (Scalar.max' extent.W 24.0f) (Scalar.max' extent.H 18.0f); radius 4.0f
-                                    fill (Color.withAlpha 0.14f ui.Theme.Accent); stroke ui.Theme.Accent 1.5f }
-                     else Empty)
-                    shift (at.X + 14.0f) (at.Y + 14.0f) (chip ui (Kind.name kind) ui.Theme.Accent ui.Theme.OnAccent) ]
+            let over = Rect.contains at canvas
+            let accent = ui.Theme.Accent
+            let target =
+                rectangle { bounds (canvas.X + 1.0f) (canvas.Y + 1.0f) (canvas.W - 2.0f) (canvas.H - 2.0f)
+                            fill (Color.withAlpha (if over then 0.06f else 0.03f) accent); stroke (Color.withAlpha (if over then 0.9f else 0.4f) accent) 2.0f }
+            let landing =
+                if over then
+                    Group [ rectangle { bounds corner.X corner.Y (Scalar.max' extent.W 24.0f) (Scalar.max' extent.H 18.0f); radius 4.0f
+                                        fill (Color.withAlpha 0.10f accent); stroke accent 1.5f }
+                            shift corner.X corner.Y (Opacity(0.7f, Scene.inert widget)) ]
+                else Empty
+            Group [ target; landing; shift (at.X + 14.0f) (at.Y + 14.0f) (chip ui (Kind.name kind) accent ui.Theme.OnAccent) ]
         | _ -> Empty
 
     let private field (ui: Ui<Msg>) (caption: string) (control: Scene) : Scene =
