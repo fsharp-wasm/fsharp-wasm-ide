@@ -1,0 +1,42 @@
+{
+ "firstFrameMs": 540,
+ "canvasFitsViewport": {
+  "top": 310,
+  "height": 702,
+  "viewport": 900,
+  "fits": false
+ },
+ "canvasBox": {
+  "x": 120,
+  "y": 240,
+  "width": 1200,
+  "height": 760
+ },
+ "click widget selects": "changed",
+ "arrow right moves/changes": "changed",
+ "shift+arrow": "changed",
+ "ctrl+z undoes": "changed",
+ "ctrl+shift+z / ctrl+y redoes": "changed",
+ "ctrl+d duplicates": "no change",
+ "escape deselects": "changed",
+ "click selects again": "changed",
+ "delete removes": "changed",
+ "tab (moves the toolkit focus)": "changed",
+ "ctrl+k opens something": "no change",
+ "ctrl+shift+p opens something": "no change",
+ "right-click on a widget": "changed",
+ "double-click label (inline edit?)": "changed",
+ "shift+click a second widget": "changed",
+ "marquee drag on empty surface": "no change",
+ "wheel on the surface (zoom/pan)": "no change",
+ "ctrl+wheel (zoom)": "no change",
+ "toolbar: Preview toggle": "changed",
+ "toolbar: back": "changed",
+ "layoutSurvivesReload": false,
+ "a11yTree": [
+  "    - text: widget layouts, written in F# and compiled to WebAssembly GC. The whole interface — palette, design surface, inspector, generated code — is drawn by the module onto one canvas; JavaScript only forwards pointer, key and size events ("
+ ],
+ "liveRegions": 0,
+ "hiddenSemanticNodes": 0,
+ "errors": []
+}

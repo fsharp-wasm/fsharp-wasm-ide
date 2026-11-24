@@ -26,6 +26,7 @@ Live: <https://fsharp-wasm.github.io/fsharp-wasm-runtime/demos/widget-editor/>
 | `src/WidgetEditor` | the editor as a library: `Model` (nodes, selection, messages), `View`, `Export` (layout → F# source), `App` (hosts the TEA program) |
 | `src/WidgetEditor.Browser` | the browser module: the exports `start`, `onResize`, `onPointer`, `onWheel`, `onKey`, `frame` that `runtime/gfx.js` calls |
 | `tests/WidgetEditor.Session` | a scripted pointer and keyboard session through the real hit tester and key path, checked against the model |
+| `docs/ux-audit.md` | the UX audit of the widget editor and the newsletter designer against a professional IDE base (2026-11-24): findings with evidence, the proposed workbench, a roadmap; `docs/ux-audit/` holds the probes that measured it |
 | `tests/e2e/editor.mjs` | the compiled module driven in Chromium and judged by what the canvas shows |
 | `web/index.html` | the page for development (`bash build/serve.sh`) |
 | `lib/graphics`, `lib/runtime`, `lib/fsharp-wasm-core` | submodules: the widget library and canvas host, the JavaScript glue and test helpers, the F# base library |

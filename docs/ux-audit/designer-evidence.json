@@ -1,0 +1,82 @@
+{
+ "loadMs": 470,
+ "tabStopsToPreview": 84,
+ "tabStopsInStructure": 58,
+ "focusIndicatorMissing": [],
+ "before": {
+  "dialogs": 0,
+  "blocks": 10,
+  "url": ""
+ },
+ "shortcuts": {
+  "Control+k": 0,
+  "Control+Shift+p": 0,
+  "?": 0,
+  "Control+s": 0,
+  "Control+f": 0,
+  "Control+p": 0,
+  "F1": 0,
+  "/": 0
+ },
+ "afterSelect": {
+  "dialogs": 0,
+  "blocks": 10,
+  "url": ""
+ },
+ "ctrlD": 0,
+ "ctrlCV": 0,
+ "deleteKey": 0,
+ "ctrlZ": 0,
+ "arrowDownMovesFocus": "HeadingSmall software, big dif",
+ "roles": {
+  "tree": 0,
+  "treeitem": 0,
+  "tablist": 0,
+  "tab": 0,
+  "tabpanel": 0,
+  "toolbar": 0,
+  "menu": 0,
+  "menubar": 0,
+  "menuitem": 0,
+  "separator": 0,
+  "dialog": 0,
+  "combobox": 0,
+  "listbox": 0,
+  "status": 2,
+  "log": 0,
+  "search": 0
+ },
+ "splitters": 0,
+ "contextMenu": {
+  "defaultPrevented": false,
+  "menus": 0
+ },
+ "selectToPaintMs": 27,
+ "typingMs": {
+  "median": 63,
+  "max": 92
+ },
+ "responsive": {
+  "390": {
+   "hScroll": false,
+   "scrollW": 390
+  },
+  "768": {
+   "hScroll": true,
+   "scrollW": 823
+  },
+  "1024": {
+   "hScroll": true,
+   "scrollW": 1040
+  },
+  "1280": {
+   "hScroll": false,
+   "scrollW": 1280
+  }
+ },
+ "darkBg": "rgb(255, 255, 255)",
+ "zoom200": {
+  "hScroll": true
+ },
+ "errors": []
+}
