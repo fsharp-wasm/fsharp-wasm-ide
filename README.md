@@ -56,3 +56,12 @@ The compiler is deliberately not a submodule: the siblings of fsharp-wasm take i
 The editor was written as the GUI builder demo of fsharp-wasm-graphics and moved here when that library's canvas host became a
 library of its own (`FSharp.Graphics.Canvas`); the history up to the move is in that repository. Apache License 2.0 (see `LICENSE`,
 `NOTICE`).
+
+## Contributing
+
+Welcome. [CONTRIBUTING](https://github.com/fsharp-wasm/.github/blob/develop/CONTRIBUTING.md) is the organisation's guide and [AGENTS.md](AGENTS.md) says how the platform is worked on (the compiler comes first: a fault found here
+is fixed in the compiler, not worked around here).
+
+- **Run the tests:** `dotnet run --project tests/WidgetEditor.Session -c Release` (a scripted session, exit 1 if a check fails); `node tests/e2e/editor.mjs` for the compiled module in Chromium.
+- **A good first contribution:** [the UX audit](docs/ux-audit.md) lists findings with evidence and a roadmap; the quick wins (W0) are small. Issues labelled [`good first issue`](https://github.com/fsharp-wasm/fsharp-wasm-ide/labels/good%20first%20issue) are the places to start.
+- **A change** goes to `develop` as a pull request, with a test that fails without it. Open an issue first for anything larger than a fix.
