@@ -1,5 +1,9 @@
 # fsharp-wasm-ide
 
+<!-- status -->
+[![CI](https://github.com/fsharp-wasm/fsharp-wasm-ide/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/fsharp-wasm/fsharp-wasm-ide/actions/workflows/ci.yml) · [Status of every repository](https://fsharp-wasm.github.io/status/)
+<!-- /status -->
+
 <!-- platform -->
 > **Part of the [fsharp-wasm platform](https://fsharp-wasm.github.io/projects/)**: editors and applications. Builds on [core](https://github.com/fsharp-wasm/fsharp-wasm-core), [graphics](https://github.com/fsharp-wasm/fsharp-wasm-graphics), [runtime](https://github.com/fsharp-wasm/fsharp-wasm-runtime). Used by nobody; it is a gate of the compiler.
 > [All projects](https://fsharp-wasm.github.io/projects/) · [Roadmap](https://fsharp-wasm.github.io/docs/roadmap/) · [Tests](https://fsharp-wasm.github.io/tests/) · [Benchmarks](https://fsharp-wasm.github.io/benchmarks/) · [Live demos](https://fsharp-wasm.github.io/demos/)
