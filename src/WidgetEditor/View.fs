@@ -21,14 +21,6 @@ module View =
 
     // ---- small drawing helpers ---------------------------------------------------------------
 
-    /// A rounded label: the value of a property, the size of a selection, the kind of an element.
-    let private chip (ui: Ui<Msg>) (text: string) (bg: Color) (fg: Color) : Scene =
-        let w = Ui.textWidth ui 11.0f text
-        Group [ rectangle { bounds 0.0f 0.0f (w + 12.0f) 18.0f; radius 6.0f; fill bg }
-                shift 6.0f 2.0f (Text(text, Ui.textStyle ui 11.0f fg)) ]
-
-    let private chipWidth (ui: Ui<Msg>) (text: string) = Ui.textWidth ui 11.0f text + 12.0f
-
     /// What an element looks like, in 22 x 14 pixels: the palette shows it instead of only naming it.
     let private icon (th: Theme) (k: Kind) : Scene =
         let ink = th.TextMuted
@@ -54,7 +46,10 @@ module View =
 
     // ---- the designed widgets ---------------------------------------------------------------
 
-    let private nodeWidget (ui: Ui<Msg>) (n: Node) : Scene =
+    let private sized (n: Node) : float32 voption = if Kind.hasFontSize n.Kind && n.FontSize > 0.0f then ValueSome n.FontSize else ValueNone
+
+    /// The element as it is built, before it is turned and faded.
+    let private nodeBase (ui: Ui<Msg>) (n: Node) : Scene =
         let id = sprintf "n%d" n.Id
         match n.Kind with
         | KButton ->
@@ -62,8 +57,8 @@ module View =
                 { Button.make n.Text ignore with
                     Variant = n.Variant
                     Width = (if n.W > 0.0f then ValueSome n.W else ValueNone) }
-        | KLabel -> Label.view ui Label.Body n.Text
-        | KHeading -> Label.view ui Label.Heading n.Text
+        | KLabel -> Label.viewSized ui Label.Body (sized n) n.Text
+        | KHeading -> Label.viewSized ui Label.Heading (sized n) n.Text
         | KToggle -> Toggle.view ui id n.Text n.On (fun v -> ui.Send(SetOn(n.Id, v)))
         | KCheck -> CheckBox.view ui id n.Text n.On (fun v -> ui.Send(SetOn(n.Id, v)))
         | KSlider ->
@@ -72,8 +67,19 @@ module View =
                   OnChange = fun v -> ui.Send(SetValue(n.Id, v)) }
         | KText -> TextField.view ui id { Value = n.Text; Placeholder = "Type here"; Width = n.W }
         | KProgress -> ProgressBar.view ui n.W n.Value
-        | KCard -> Panel.view ui Panel.card (Label.view ui Label.Heading n.Text)
+        | KCard -> Panel.view ui Panel.card (Label.viewSized ui Label.Heading (sized n) n.Text)
         | KDivider -> Divider.horizontal ui n.W
+
+    /// The middle of the element as it is built: what it turns about.
+    let centre (ui: Ui<Msg>) (n: Node) : Vec2 =
+        let b = Ui.measure ui (nodeBase ui n)
+        Vec2.create (b.X + b.W * 0.5f) (b.Y + b.H * 0.5f)
+
+    /// The element as it is drawn: turned about its middle, and faded.
+    let private nodeWidget (ui: Ui<Msg>) (n: Node) : Scene =
+        let w = nodeBase ui n
+        let turned = if n.Rotation = 0.0f then w else Scene.rotate n.Rotation (centre ui n) w
+        if n.Opacity >= 1.0f then turned else Scene.opacity n.Opacity turned
 
     /// Drag-to-move overlay. Pointer events carry window coordinates, so the drag is relative to
     /// the press point; the closure (created at press time) keeps receiving the captured moves.
@@ -150,8 +156,8 @@ module View =
                 shift n.X n.Y
                     (Group [ rectangle { bounds x0 y0 (x1 - x0) (y1 - y0); radius 4.0f; stroke th.Accent 1.5f }
                              corner x0 y0; corner x1 y0; corner x0 y1; corner x1 y1
-                             shift ((x0 + x1) * 0.5f - chipWidth chrome size * 0.5f) (y1 + 8.0f) (chip chrome size (rgba 8 12 24 235) Color.White)
-                             (if Kind.hasWidth n.Kind then widthHandle chrome th n b else Empty) ])
+                             shift ((x0 + x1) * 0.5f - Chip.width chrome size * 0.5f) (y1 + 8.0f) (Chip.view chrome size (rgba 8 12 24 235) Color.White)
+                             (if Kind.hasWidth n.Kind && n.Rotation = 0.0f then widthHandle chrome th n b else Empty) ])
             | _ -> Empty
         Clip(Rect.create 0.0f 0.0f w h,
              Group [ rectangle { bounds 0.0f 0.0f w h; fill th.Background }
@@ -233,17 +239,8 @@ module View =
                                         fill (Color.withAlpha 0.10f accent); stroke accent 1.5f }
                             shift corner.X corner.Y (Opacity(0.7f, Scene.inert widget)) ]
                 else Empty
-            Group [ target; landing; shift (at.X + 14.0f) (at.Y + 14.0f) (chip ui (Kind.name kind) accent ui.Theme.OnAccent) ]
+            Group [ target; landing; shift (at.X + 14.0f) (at.Y + 14.0f) (Chip.view ui (Kind.name kind) accent ui.Theme.OnAccent) ]
         | _ -> Empty
-
-    let private field (ui: Ui<Msg>) (caption: string) (control: Scene) : Scene =
-        column { gap 4; child (Label.view ui Label.Caption caption); child control }
-
-    /// A property with its current value shown as a chip at the right of the caption.
-    let private valued (ui: Ui<Msg>) (caption: string) (value: string) (control: Scene) : Scene =
-        let head = Group [ Label.view ui Label.Caption caption
-                           shift (220.0f - chipWidth ui value) -3.0f (chip ui value ui.Theme.SurfaceRaised ui.Theme.Text) ]
-        column { gap 4; child head; child control }
 
     let private inspector (ui: Ui<Msg>) (m: Model) (canvasW: float32) : Scene =
         match m.Selected |> Option.bind (fun id -> m.Nodes |> List.tryFind (fun n -> n.Id = id)) with
@@ -256,36 +253,40 @@ module View =
             }
         | Some n ->
             let send = ui.Send
-            let sl id (lo: float32) (hi: float32) (v: float32) (f: float32 -> Msg) =
-                Slider.view ui id { Min = lo; Max = hi; Value = v; Width = 220.0f; OnChange = fun x -> send (f x) }
+            let grid = Properties.range 0.0f 1.0f 8.0f
+            let fontSize = Properties.range 8.0f 96.0f 1.0f |> Properties.unit "px"
             column {
                 gap 12
                 child (Group [ Label.view ui Label.Heading "Inspector"
-                               shift (220.0f - chipWidth ui (Kind.name n.Kind)) 3.0f (chip ui (Kind.name n.Kind) ui.Theme.Accent ui.Theme.OnAccent) ])
-                childIf (Kind.hasText n.Kind)
-                    (field ui "Text" (TextField.view ui "insp-text" { Value = n.Text; Placeholder = "(empty)"; Width = 220.0f }))
-                child (valued ui "X" (sprintf "%d" (int n.X)) (sl "insp-x" 0.0f canvasW n.X (fun v -> MoveTo(n.Id, Model.snap v, n.Y))))
-                child (valued ui "Y" (sprintf "%d" (int n.Y)) (sl "insp-y" 0.0f 600.0f n.Y (fun v -> MoveTo(n.Id, n.X, Model.snap v))))
+                               shift (Properties.Width - Chip.width ui (Kind.name n.Kind)) 3.0f (Chip.view ui (Kind.name n.Kind) ui.Theme.Accent ui.Theme.OnAccent) ])
+                childIf (Kind.hasText n.Kind) (Properties.text ui "insp-text" "Text" n.Text "(empty)")
+                child (Properties.slider ui "insp-x" "X" { grid with Max = canvasW } n.X (fun v -> send (MoveTo(n.Id, Model.snap v, n.Y))))
+                child (Properties.slider ui "insp-y" "Y" { grid with Max = 600.0f } n.Y (fun v -> send (MoveTo(n.Id, n.X, Model.snap v))))
                 childIf (Kind.hasWidth n.Kind)
-                    (valued ui "Width" (sprintf "%d" (int n.W)) (sl "insp-w" 40.0f 600.0f (max 40.0f n.W) (fun v -> SetW(n.Id, v))))
+                    (Properties.slider ui "insp-w" "Width" { grid with Min = 40.0f; Max = 600.0f } (max 40.0f n.W) (fun v -> send (SetW(n.Id, v))))
+                childIf (Kind.hasFontSize n.Kind)
+                    (column { gap 6
+                              child (Properties.number ui "insp-fontsize" "Font size" fontSize n.FontSize (fun v -> send (SetFontSize(n.Id, v))))
+                              child (Properties.presets ui "insp-fontsize" fontSize [ 12.0f; 16.0f; 24.0f; 36.0f ] n.FontSize (fun v -> send (SetFontSize(n.Id, v)))) })
+                child (Properties.angle ui "insp-rot" "Rotation" n.Rotation (fun v -> send (SetRotation(n.Id, v))))
+                child (Properties.slider ui "insp-opacity" "Opacity" (Properties.range 0.0f 1.0f 0.05f |> Properties.decimals 2) n.Opacity (fun v -> send (SetOpacity(n.Id, v))))
                 childIf (Kind.hasValue n.Kind)
-                    (valued ui "Value" (sprintf "%.2f" n.Value) (sl "insp-v" 0.0f 1.0f n.Value (fun v -> SetValue(n.Id, v))))
-                childIf (Kind.hasOn n.Kind)
-                    (Toggle.view ui "insp-on" "Checked / on" n.On (fun v -> send (SetOn(n.Id, v))))
-                child (Divider.horizontal ui 220.0f)
+                    (Properties.slider ui "insp-v" "Value" (Properties.range 0.0f 1.0f 0.01f |> Properties.decimals 2) n.Value (fun v -> send (SetValue(n.Id, v))))
+                childIf (Kind.hasOn n.Kind) (Properties.toggle ui "insp-on" "Checked / on" n.On (fun v -> send (SetOn(n.Id, v))))
+                child (Divider.horizontal ui Properties.Width)
                 child (row {
                     gap 8
                     child (Button.view ui "insp-dup" { Button.make "Duplicate" (fun () -> send Duplicate) with Variant = Button.Secondary })
                     child (Button.view ui "insp-front" { Button.make "To front" (fun () -> send BringToFront) with Variant = Button.Secondary })
                 })
                 childIf (n.Kind = KButton)
-                    (field ui "Variant"
+                    (Properties.field ui "Variant" ""
                         (Dropdown.view ui "insp-variant"
                             { Options = Model.variants |> List.map Model.variantName; Selected = List.findIndex ((=) n.Variant) Model.variants
-                              Open = m.VariantOpen; Width = 220.0f
+                              Open = m.VariantOpen; Width = Properties.Width
                               OnToggle = (fun () -> send ToggleVariantMenu)
                               OnSelect = fun i -> send (SetVariant(n.Id, Model.variants.[i])) }))
-                child (Button.view ui "insp-del" { Button.make "Delete" (fun () -> send Delete) with Variant = Button.Danger; Width = ValueSome 220.0f })
+                child (Button.view ui "insp-del" { Button.make "Delete" (fun () -> send Delete) with Variant = Button.Danger; Width = ValueSome Properties.Width })
             }
 
     let private topBar (ui: Ui<Msg>) (m: Model) (w: float32) : Scene =
@@ -315,14 +316,14 @@ module View =
             rectangle { bounds 0.0f (TopH - 1.0f) w 1.0f; fill ui.Theme.Border }
             shift 16 12 (logo ui.Theme)
             shift 54 13 title
-            shift (54.0f + titleW + 12.0f) 16 (chip ui "FSharp.Graphics" ui.Theme.Surface ui.Theme.TextMuted)
+            shift (54.0f + titleW + 12.0f) 16 (Chip.view ui "FSharp.Graphics" ui.Theme.Surface ui.Theme.TextMuted)
             shift (w - bw - 20.0f) 9 buttons
         ]
 
     let private codePanel (ui: Ui<Msg>) (m: Model) (w: float32) : Scene =
         let th = ui.Theme
         let lines =
-            Export.generate m
+            Export.generate (centre ui) m
             |> List.map (fun l ->
                 let color = if l.TrimStart().StartsWith "open" then th.TextMuted else th.Text
                 Text((if l = "" then " " else l), Ui.textStyle ui 12.0f color))

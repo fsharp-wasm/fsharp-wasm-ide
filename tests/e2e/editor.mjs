@@ -137,6 +137,10 @@ try {
   for (const [name, key] of [['an umlaut (ä) of another layout', 'ä'], ['the euro sign', '€']]) {
     await typedChanges(name, () => page.locator('#gfx').evaluate((c, key) => c.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })), key));
   }
+  // the property widgets of the inspector (made once in the toolkit): the heading is selected, its letters are made larger with the plus of the font size, and it is turned by a preset
+  await page.mouse.click(...at(260, 112)); await page.waitForTimeout(250);
+  await changed('the plus of the font size makes the letters larger', async () => { for (let i = 0; i < 6; i++) { await page.mouse.click(...at(1150, 317)); await page.waitForTimeout(60); } });
+  await changed('the preset of 90 degrees turns the element', () => page.mouse.click(...at(1028, 454)));
   check('no page errors', errors.length === 0, JSON.stringify(errors).slice(0, 300));
 } catch (e) {
   check('ran to the end', false, String(e.message).split('\n')[0]);

@@ -188,4 +188,28 @@ let main argv =
     check "Escape cancels the drag: nothing is added" (app.Model.Nodes.Length = count0 && app.Model.Drag = Idle)
     click 100.0f 336.0f
     check "a click on an entry still adds it" (app.Model.Nodes.Length = count0 + 1 && (last ()).Kind = KSlider)
+    // the properties of an element that a designer sets: the size of its letters, its rotation and its opacity (the property widgets of the toolkit)
+    let heading = app.Model.Nodes |> List.find (fun n -> n.Kind = KHeading)
+    let nodeOf id = app.Model.Nodes |> List.find (fun n -> n.Id = id)
+    app.Dispatch (UiMsg (UiMsg.Blur))
+    app.Dispatch (Select (Some heading.Id))
+    check "an element starts at the natural size of its letters, upright and opaque" (heading.FontSize = 18.0f && heading.Rotation = 0.0f && heading.Opacity = 1.0f)
+    app.Dispatch (SetFontSize(heading.Id, 28.0f)); app.Dispatch (SetRotation(heading.Id, 15.0f)); app.Dispatch (SetOpacity(heading.Id, 0.5f))
+    let styled = nodeOf heading.Id
+    check "the size, the rotation and the opacity are set" (styled.FontSize = 28.0f && styled.Rotation = 15.0f && styled.Opacity = 0.5f)
+    app.Dispatch (SetFontSize(heading.Id, 500.0f)); app.Dispatch (SetRotation(heading.Id, 720.0f)); app.Dispatch (SetOpacity(heading.Id, -3.0f))
+    let clamped = nodeOf heading.Id
+    check "they stay inside their limits" (clamped.FontSize = 96.0f && clamped.Rotation = 360.0f && clamped.Opacity = 0.0f)
+    app.Dispatch (SetFontSize(heading.Id, 28.0f)); app.Dispatch (SetRotation(heading.Id, 15.0f)); app.Dispatch (SetOpacity(heading.Id, 0.5f))
+    check "the code of the design says them (the size of the letters, the turn about the middle, the opacity)"
+        (let code = Export.generate (fun _ -> Vec2.create 40.0f 9.0f) app.Model |> String.concat "\n"
+         code.Contains "Label.viewSized ui Label.Heading (ValueSome 28.0f) \"Sign in\"" && code.Contains "Scene.rotate 15.0f (Vec2.create 40.0f 9.0f)" && code.Contains "Scene.opacity 0.5f" && code.Contains "open FSharp.Math")
+    check "an element that was not given them is exported as before" (let code = Export.generate (fun _ -> Vec2.create 0.0f 0.0f) app.Model |> String.concat "\n" in code.Contains "Button.view ui \"n5\"" && not (code.Contains "Scene.rotate 0.0f"))
+    app.Dispatch Undo
+    check "undo takes one property back, one step each (the opacity was 0 before it was set to a half)" ((nodeOf heading.Id).Opacity = 0.0f && (nodeOf heading.Id).Rotation = 15.0f && (nodeOf heading.Id).FontSize = 28.0f)
+    // the inspector is built from the property widgets: a heading has the size of its letters, a toggle does not; both have rotation and opacity
+    let rows () = SemanticTree.walk (app.Build(0.0f, Vec2.create 1280.0f 800.0f)) |> Array.map (fun s -> s.Id)
+    check "the inspector of a heading has the font size, the rotation and the opacity" (let r = rows () in [ "insp-fontsize-plus"; "insp-fontsize-minus"; "insp-rot"; "insp-rot-preset2"; "insp-opacity" ] |> List.forall (fun id -> Array.contains id r))
+    app.Dispatch (Add KToggle)
+    check "the inspector of a toggle has no font size, but the rotation and the opacity" (let r = rows () in not (Array.contains "insp-fontsize-plus" r) && Array.contains "insp-rot" r && Array.contains "insp-opacity" r)
     if failures > 0 then 1 else 0

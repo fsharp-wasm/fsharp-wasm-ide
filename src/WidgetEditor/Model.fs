@@ -21,6 +21,10 @@ module Kind =
     let hasWidth = function KButton | KSlider | KText | KProgress | KDivider -> true | _ -> false
     let hasValue = function KSlider | KProgress -> true | _ -> false
     let hasOn = function KToggle | KCheck -> true | _ -> false
+    /// The elements whose letters have a size of their own (a button, a toggle and a field take the size of the theme).
+    let hasFontSize = function KLabel | KHeading | KCard -> true | _ -> false
+    /// The size of the letters of an element that has not been given one: what the toolkit draws it with.
+    let naturalFontSize = function KHeading | KCard -> 18.0f | KLabel -> 14.0f | _ -> 0.0f
     let defaultText = function
         | KButton -> "Button" | KLabel -> "Label text" | KHeading -> "Heading" | KToggle -> "Toggle me"
         | KCheck -> "Check me" | KText -> "" | KCard -> "Card title" | _ -> ""
@@ -35,7 +39,13 @@ type Node =
       Text: string
       On: bool
       Value: float32
-      Variant: Button.Variant }
+      Variant: Button.Variant
+      /// The size of the letters, in pixels (0 for an element that has none of its own).
+      FontSize: float32
+      /// Degrees, turned about the middle of the element.
+      Rotation: float32
+      /// 1 is opaque.
+      Opacity: float32 }
 
 /// What the log of changes keeps: the elements on the surface and which one is selected, so that undoing an addition or a deletion puts the selection back where it was.
 type Snapshot = { Nodes: Node list; NextId: int; Selected: int option }
@@ -76,6 +86,9 @@ type Msg =
     | DragMove of Vec2 * Rect
     | DragRelease of Vec2 * Rect
     | DragCancel
+    | SetFontSize of int * float32
+    | SetRotation of int * float32
+    | SetOpacity of int * float32
     | Key of string
     /// What the person typed, as the platform made it (the layout, Shift, Caps Lock, AltGr, accents applied): into the text of the element when its field has the focus.
     | Typed of string
@@ -98,7 +111,8 @@ module Model =
     let newNode (id: int) (kind: Kind) (x: float32) (y: float32) : Node =
         { Id = id; Kind = kind; X = x; Y = y
           W = (match kind with KSlider | KText | KProgress | KDivider -> 220.0f | _ -> 0.0f)
-          Text = Kind.defaultText kind; On = (kind = KToggle); Value = 0.5f; Variant = Button.Primary }
+          Text = Kind.defaultText kind; On = (kind = KToggle); Value = 0.5f; Variant = Button.Primary
+          FontSize = Kind.naturalFontSize kind; Rotation = 0.0f; Opacity = 1.0f }
 
     let init () : Model * Cmd<Msg> =
         let mk id kind x y f = f (newNode id kind x y)
@@ -155,6 +169,9 @@ module Model =
             | SetText(id, t) -> mapNode id (fun n -> { n with Text = t }) m
             | SetOn(id, v) -> mapNode id (fun n -> { n with On = v }) m
             | SetValue(id, v) -> mapNode id (fun n -> { n with Value = v }) m
+            | SetFontSize(id, v) -> mapNode id (fun n -> { n with FontSize = Scalar.clamp 8.0f 96.0f v }) m
+            | SetRotation(id, v) -> mapNode id (fun n -> { n with Rotation = Scalar.clamp 0.0f 360.0f v }) m
+            | SetOpacity(id, v) -> mapNode id (fun n -> { n with Opacity = Scalar.clamp 0.0f 1.0f v }) m
             | ToggleVariantMenu -> { m with VariantOpen = not m.VariantOpen }
             | SetVariant(id, v) -> mapNode id (fun n -> { n with Variant = v }) { m with VariantOpen = false }
             | Delete ->
@@ -216,6 +233,9 @@ module Model =
         | SetW(id, _), _ -> "w:" + string id
         | SetText(id, _), _ -> "text:" + string id
         | SetValue(id, _), _ -> "value:" + string id
+        | SetFontSize(id, _), _ -> "fontsize:" + string id
+        | SetRotation(id, _), _ -> "rotation:" + string id
+        | SetOpacity(id, _), _ -> "opacity:" + string id
         | Key ("Delete" | "Backspace"), None -> ""
         | Key "Tab", _ | Key "Enter", _ | Key "Escape", _ -> ""
         | (Key _ | Typed _), Some f when f.StartsWith "insp-" -> f + ":" + sel
