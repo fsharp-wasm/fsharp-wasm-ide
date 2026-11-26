@@ -212,4 +212,64 @@ let main argv =
     check "the inspector of a heading has the font size, the rotation and the opacity" (let r = rows () in [ "insp-fontsize-plus"; "insp-fontsize-minus"; "insp-rot"; "insp-rot-preset2"; "insp-opacity" ] |> List.forall (fun id -> Array.contains id r))
     app.Dispatch (Add KToggle)
     check "the inspector of a toggle has no font size, but the rotation and the opacity" (let r = rows () in not (Array.contains "insp-fontsize-plus" r) && Array.contains "insp-rot" r && Array.contains "insp-opacity" r)
+    // the layers: the elements in the order they are stacked, the one in front first; a row selects, dragged it puts the element elsewhere in the stack, Page Up and Page Down move it a place
+    if app.Model.Preview then app.Dispatch TogglePreview
+    app.Dispatch (UiMsg (UiMsg.Blur))
+    let order () = app.Model.Nodes |> List.map (fun n -> n.Id)
+    // the place of a row in the window, as the scene that was last drawn has it
+    let layerRect (id: int) : Rect =
+        frame None
+        (SemanticTree.collect stage.Resolved |> Array.find (fun n -> n.Info.Id = "layer-" + string id)).Bounds
+    let centre (r: Rect) = Vec2.create (r.X + r.W * 0.5f) (r.Y + r.H * 0.5f)
+    // start from a known stack: the five elements of the first design, in order 1 2 3 4 5 (5 in front)
+    let ids0 = [ 1; 2; 3; 4; 5 ]
+    while Model.canUndo app.Model do app.Dispatch Undo
+    check "the stack at the start of the design is the order in which the elements were made" (order () = ids0)
+    let rows = ids0 |> List.map (fun id -> id, layerRect id)
+    check "the layers list shows the one in front on top, a row below the other" (rows |> List.map (fun (_, r) -> r.Y) |> List.pairwise |> List.forall (fun (a, b) -> a > b))
+    let c1 = centre (layerRect 1)
+    click c1.X c1.Y
+    check "a click on a row selects the element, and moves nothing" (app.Model.Selected = Some 1 && order () = ids0 && app.Model.LayerDrag = Idle && not (Model.canUndo app.Model))
+    // element 1 is at the bottom of the list; drag it to the top: above element 5, so it is in front
+    let top = layerRect 5
+    drag c1.X c1.Y c1.X (top.Y + 2.0f)
+    check "dragged above the top row, an element comes to the front" (order () = [ 2; 3; 4; 5; 1 ] && app.Model.Selected = Some 1 && app.Model.LayerDrag = Idle)
+    frame (Some "editor-8-layers")
+    app.Dispatch Undo
+    check "undo puts it back, in one step" (order () = ids0)
+    // drag element 3 (the middle one) down between 2 and 1: behind 2
+    let c3 = centre (layerRect 3)
+    let r2 = layerRect 2
+    drag c3.X c3.Y c3.X (r2.Y + r2.H - 2.0f)
+    check "dragged to the lower half of the row below it, an element goes behind that one" (order () = [ 1; 3; 2; 4; 5 ])
+    app.Dispatch Undo
+    // while it is dragged the mark is where it would land, and Escape throws the drag away
+    let c4 = centre (layerRect 4)
+    stage.Input(PointerMove(c4)) |> ignore
+    frame None
+    stage.Input(PointerDown(c4, 0)) |> ignore
+    frame None
+    stage.Input(PointerMove(Vec2.create c4.X (c4.Y + 80.0f))) |> ignore
+    frame (Some "editor-9-layer-dragging")
+    check "dragging a layer is a session that has a drop" (Drag.isDragging app.Model.LayerDrag && (Drag.over app.Model.LayerDrag).IsSome && order () = ids0)
+    key "Escape"
+    stage.Input(PointerUp(Vec2.create c4.X (c4.Y + 80.0f), 0)) |> ignore
+    check "Escape ends it and nothing moved" (app.Model.LayerDrag = Idle && order () = ids0 && not (Model.canUndo app.Model))
+    // the keyboard: the same drop, by Page Up and Page Down, and the buttons of the inspector
+    app.Dispatch (Select (Some 3))
+    key "PageUp"
+    check "Page Up brings the selected element one place forward" (order () = [ 1; 2; 4; 3; 5 ])
+    key "PageDown"
+    key "PageDown"
+    check "and Page Down takes it back, and one more place behind" (order () = [ 1; 3; 2; 4; 5 ])
+    key "PageDown"
+    key "PageDown"
+    check "at the back it stays at the back" (order () = [ 3; 1; 2; 4; 5 ])
+    app.Dispatch (MoveLayer(5, -1))
+    check "the front element cannot come further forward" (order () = [ 3; 1; 2; 4; 5 ])
+    app.Dispatch (MoveLayer(4, -1))
+    check "one place forward is what the button of the inspector does" (order () = [ 3; 1; 2; 5; 4 ])
+    // every layer is a control for assistive technology, named by its place and what it is
+    let rows2 = SemanticTree.walk (app.Build(t, Vec2.create (float32 w) (float32 h))) |> Array.filter (fun s -> s.Id.StartsWith "layer-")
+    check "a layer is named by its place in the stack and what it is" (rows2.Length = app.Model.Nodes.Length && rows2 |> Array.forall (fun s -> s.Name.StartsWith "Layer " && s.Name.Contains " of "))
     if failures > 0 then 1 else 0

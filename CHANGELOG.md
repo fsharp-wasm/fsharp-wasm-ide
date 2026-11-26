@@ -5,6 +5,10 @@ All notable changes to this repository are documented here (newest first).
 ## [Unreleased]
 
 ### Added
+- **Layers**: the elements in the order they are stacked, the one in front first, as a list under the palette. A click on a row selects the element; dragged, it goes elsewhere in the stack (a mark between two rows
+  says where, the same `Interact` drop as the palette's), and the keyboard does the same: Page Up and Page Down move the selected element one place (`Keyboard.step` of the same library), as do the Forward and Backward buttons
+  of the inspector. Escape throws a drag away; a move is one step of the undo log. Every row is a control for assistive technology ("Layer 2 of 5: CheckBox · Remember me"). 14 checks in the session test, through the real
+  hit tester and key path.
 - **Undo and redo** (`Edit.History`): every change of the elements is one `Replace` of the whole set in the log of FSharp.Wasm.Edit, and the log
   keeps the selection too, so undoing an addition or a deletion puts it back where it was. The moves of one drag, the width of one drag, the
   keystrokes into one text and the nudges of one element are one step each. Buttons in the bar (disabled while there is nothing to undo or redo),

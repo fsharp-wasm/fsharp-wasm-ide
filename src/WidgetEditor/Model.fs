@@ -57,6 +57,8 @@ type Model =
       History: History<Snapshot>
       /// An element of the palette being pressed or dragged (window coordinates); where it would land is where the pointer is.
       Drag: Session<Kind>
+      /// An element of the layers list being pressed or dragged (the pointer in the space of the list); where it would land is the drop the session holds.
+      LayerDrag: Session<int>
       Selected: int option
       Ui: UiState
       DarkDesign: bool
@@ -86,6 +88,13 @@ type Msg =
     | DragMove of Vec2 * Rect
     | DragRelease of Vec2 * Rect
     | DragCancel
+    /// A press on a row of the layers list, a move of the pointer, the release: the pointer in the space of the list (its corner is the origin, a row is `Layers.rowH` high).
+    | LayerPress of int * Vec2
+    | LayerMove of Vec2
+    | LayerRelease of Vec2
+    | LayerCancel
+    /// One place in the list: -1 is one up (in front of the element that is above), 1 one down.
+    | MoveLayer of id: int * by: int
     | SetFontSize of int * float32
     | SetRotation of int * float32
     | SetOpacity of int * float32
@@ -96,6 +105,40 @@ type Msg =
     | TogglePreview
     | ToggleCode
     | ScrollCode of float32
+
+/// The layers: the elements in the order they are stacked, the one in front first.
+module Layers =
+    let rowH = 30.0f
+    let rowW = 158.0f
+
+    /// The elements as the list shows them: the one in front on top.
+    let shown (nodes: Node list) : Node list = List.rev nodes
+
+    /// The rows of the list as places that a drop can go to, in the space of the list.  Nothing nests.
+    let slots (nodes: Node list) : Slot list =
+        shown nodes |> List.mapi (fun i n -> { Id = n.Id; Bounds = Rect.create 0.0f (float32 i * rowH) rowW rowH; Flow = Flow.Down; Nests = false })
+
+    /// The elements after `id` was dropped at `drop` of the list: above a row is in front of it (later in the stack), below is behind it.  A drop on itself changes nothing.
+    let reorder (nodes: Node list) (id: int) (drop: Drop) : Node list =
+        match nodes |> List.tryFind (fun n -> n.Id = id) with
+        | Some moving when drop.Target <> id ->
+            let rest = nodes |> List.filter (fun n -> n.Id <> id)
+            (match rest |> List.tryFindIndex (fun n -> n.Id = drop.Target) with
+             | Some at ->
+                let index = if drop.Position = Before then at + 1 else at
+                List.take index rest @ [ moving ] @ List.skip index rest
+             | None -> nodes)
+        | _ -> nodes
+
+    /// Where one press of a key takes the element: a session of the keyboard from the place above its row, `by` places on, and the drop it ends on.  Moving down starts one place later,
+    /// because the place below an element is the one it is in.
+    let stepped (nodes: Node list) (id: int) (by: int) : Drop option =
+        let all = slots nodes
+        match all |> List.tryFind (fun s -> s.Id = id) with
+        | Some own ->
+            let session = Keyboard.grab id all (Some (Drop.place own Before)) |> Keyboard.step all (if by > 0 then by + 1 else by)
+            Drag.release session |> Option.map snd
+        | None -> None
 
 module Model =
     let variants = [ Button.Primary; Button.Secondary; Button.Danger; Button.Ghost ]
@@ -122,7 +165,7 @@ module Model =
               mk 3 KText 48.0f 128.0f (fun n -> { n with W = 280.0f })
               mk 4 KCheck 48.0f 184.0f (fun n -> { n with Text = "Remember me"; On = true })
               mk 5 KButton 48.0f 224.0f (fun n -> { n with Text = "Sign in"; W = 280.0f }) ]
-        { Nodes = nodes; NextId = 6; History = History.create 200; Drag = Idle; Selected = Some 5; Ui = UiState.empty
+        { Nodes = nodes; NextId = 6; History = History.create 200; Drag = Idle; LayerDrag = Idle; Selected = Some 5; Ui = UiState.empty
           DarkDesign = true; Preview = false; ShowCode = false; CodeScroll = 0.0f; VariantOpen = false }, Cmd.none
 
     let private mapNode id f (m: Model) =
@@ -145,6 +188,12 @@ module Model =
     /// The design surface as the one place a drop can land.
     let private surface (canvas: Rect) : Slot = { Id = 0; Bounds = canvas; Flow = Flow.Down; Nests = true }
 
+    /// The element `id` moved `by` places in the stack (-1 up in the list, in front; 1 down).
+    let private moveLayer (m: Model) (id: int) (by: int) : Model =
+        match Layers.stepped m.Nodes id by with
+        | Some drop -> { m with Nodes = Layers.reorder m.Nodes id drop }
+        | None -> m
+
     let private step (m: Model) (msg: Msg) : Model =
             match msg with
             | UiMsg u -> { m with Ui = UiState.update m.Ui u }
@@ -163,6 +212,17 @@ module Model =
                  | _, Some (kind, _) when Rect.contains p canvas -> addAt kind (p.X - canvas.X) (p.Y - canvas.Y) m1
                  | _ -> m1)
             | DragCancel -> { m with Drag = Idle }
+            // the layers: a press selects the element and may become a drag; let go without having moved is a click, over a row it is the drop
+            | LayerPress(id, p) -> { m with LayerDrag = Drag.press id p; Selected = Some id }
+            | LayerMove p -> { m with LayerDrag = Drag.move (Layers.slots m.Nodes) p m.LayerDrag }
+            | LayerRelease p ->
+                let landed = Drag.move (Layers.slots m.Nodes) p m.LayerDrag
+                let m1 = { m with LayerDrag = Idle }
+                (match Drag.release landed with
+                 | Some (id, drop) -> { m1 with Nodes = Layers.reorder m.Nodes id drop }
+                 | None -> m1)
+            | LayerCancel -> { m with LayerDrag = Idle }
+            | MoveLayer(id, by) -> moveLayer m id by
             | Select s -> { m with Selected = s }
             | MoveTo(id, x, y) -> mapNode id (fun n -> { n with X = max 0.0f x; Y = max 0.0f y }) m
             | SetW(id, w) -> mapNode id (fun n -> { n with W = max 40.0f (snap w) }) m
@@ -197,6 +257,7 @@ module Model =
                 // of the surface: the arrows nudge the selected element, Delete removes it, Escape deselects.
                 match m.Ui.Focus, selectedNode m with
                 | _ when key = "Escape" && m.Drag <> Idle -> { m with Drag = Idle }
+                | _ when key = "Escape" && m.LayerDrag <> Idle -> { m with LayerDrag = Idle }
                 | Some "insp-text", Some n when key <> "Tab" ->
                     match key with
                     | "Enter" | "Escape" -> { m with Ui = UiState.update m.Ui UiMsg.Blur }
@@ -205,6 +266,8 @@ module Model =
                     let d = 8.0f
                     match key with
                     | "Delete" | "Backspace" -> { m with Nodes = m.Nodes |> List.filter (fun x -> x.Id <> n.Id); Selected = None }
+                    | "PageUp" -> moveLayer m n.Id -1
+                    | "PageDown" -> moveLayer m n.Id 1
                     | "Left" -> mapNode n.Id (fun n -> { n with X = max 0.0f (n.X - d) }) m
                     | "Right" -> mapNode n.Id (fun n -> { n with X = n.X + d }) m
                     | "Up" -> mapNode n.Id (fun n -> { n with Y = max 0.0f (n.Y - d) }) m

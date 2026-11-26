@@ -192,20 +192,30 @@ module View =
                 y + h + 8.0f, (k, Rect.create 0.0f y 158.0f h) :: acc) (head + 8.0f + caption + 8.0f, [])
         List.rev placed
 
-    /// The press, the moves and the release of one entry.  Its handler sees the pointer in the entry's own space; the model wants the window's: the entry's corner, then the pointer.
-    /// What the release means (an entry that was only clicked is added, a dragged one lands where it is let go) is the model's: it knows whether the pointer moved.
-    let private entryOverlay (ui: Ui<Msg>) (canvas: Rect) (k: Kind) (r: Rect) : Scene =
-        let at (p: Vec2) = Vec2.add (Vec2.add paletteOrigin (Vec2.create r.X r.Y)) p
+    /// A rectangle that the pointer can press, drag from and release: the three messages are the caller's, and `at` turns a point of the rectangle (its own space) into the space the model
+    /// wants it in.  What the release means (a click, a drop) is the model's: it knows whether the pointer moved.
+    let private dragHandle (at: Vec2 -> Vec2) (press: Vec2 -> unit) (move: Vec2 -> unit) (release: Vec2 -> unit) (r: Rect) : Scene =
         let pressed = ref false
         shift r.X r.Y
             (Cursor(CursorKind.Grab, Reactive(
                 (fun e ->
                     match e with
-                    | PointerDown(p, 0) -> pressed.Value <- true; ui.Send(DragPress(k, at p)); true
-                    | PointerMove p when pressed.Value -> ui.Send(DragMove(at p, canvas)); true
-                    | PointerUp(p, 0) when pressed.Value -> pressed.Value <- false; ui.Send(DragRelease(at p, canvas)); true
+                    | PointerDown(p, 0) -> pressed.Value <- true; press (at p); true
+                    | PointerMove p when pressed.Value -> move (at p); true
+                    | PointerUp(p, 0) when pressed.Value -> pressed.Value <- false; release (at p); true
                     | _ -> false),
                 rectangle { bounds 0.0f 0.0f r.W r.H; fill Color.Transparent })))
+
+    /// Where the palette ends, in its own space: what is below it starts there.
+    let private paletteBottom (ui: Ui<Msg>) : float32 =
+        match List.rev (paletteRects ui) with
+        | (_, r) :: _ -> r.Y + r.H
+        | [] -> 0.0f
+
+    /// The press, the moves and the release of one entry of the palette.  Its handler sees the pointer in the entry's own space; the model wants the window's: the entry's corner, then the pointer.
+    let private entryOverlay (ui: Ui<Msg>) (canvas: Rect) (k: Kind) (r: Rect) : Scene =
+        let at (p: Vec2) = Vec2.add (Vec2.add paletteOrigin (Vec2.create r.X r.Y)) p
+        dragHandle at (fun p -> ui.Send(DragPress(k, p))) (fun p -> ui.Send(DragMove(p, canvas))) (fun p -> ui.Send(DragRelease(p, canvas))) r
 
     let private palette (ui: Ui<Msg>) (canvas: Rect) : Scene =
         let head = Label.view ui Label.Heading "Elements"
@@ -217,6 +227,49 @@ module View =
         Group [ head
                 shift 0.0f ((Ui.measure ui head).H + 8.0f) (Label.view ui Label.Caption paletteCaption)
                 Group entries ]
+
+    // ---- the layers: the elements in the order they are stacked, the one in front first ------------------------------------------------------------------------------------------
+
+    /// The list of layers: a row for each element, which selects it and, dragged, puts it elsewhere in the stack; a mark between two rows says where it would land.  The pointer is reported in the
+    /// space of the list (its corner is the origin, a row is `Layers.rowH` high), which is what the model's slots are in.  `avail` is the height the panel has left; rows that do not fit are counted.
+    let private layers (ui: Ui<Msg>) (m: Model) (avail: float32) : Scene =
+        let th = ui.Theme
+        let head = Label.view ui Label.Heading "Layers"
+        let caption = Label.view ui Label.Caption "Drag, or Page Up / Down"
+        let listY = (Ui.measure ui head).H + 8.0f + (Ui.measure ui caption).H + 8.0f
+        let fits = max 1 (int ((avail - listY) / Layers.rowH))
+        let nodes = Layers.shown m.Nodes
+        let lifted = Drag.payload m.LayerDrag
+        let row (i: int) (n: Node) : Scene =
+            let y = float32 i * Layers.rowH
+            let selected = (m.Selected = Some n.Id)
+            let label = Kind.name n.Kind + (if Kind.hasText n.Kind && n.Text <> "" then " · " + n.Text else "")
+            let ty = (Layers.rowH - th.FontSize * 1.2f) * 0.5f
+            let dim = if lifted = Some n.Id then 0.45f else 1.0f
+            let body =
+                Opacity(dim, Group [ rectangle { bounds 0.0f 2.0f Layers.rowW (Layers.rowH - 4.0f); radius 6.0f
+                                                 fill (if selected then Color.withAlpha 0.22f th.Accent else Color.Transparent)
+                                                 stroke (if selected then th.Accent else Color.Transparent) 1.0f }
+                                     shift 8.0f ((Layers.rowH - 14.0f) * 0.5f) (icon th n.Kind)
+                                     shift 38.0f ty (Clip(Rect.create 0.0f 0.0f (Layers.rowW - 46.0f) (th.FontSize * 1.4f), Text(label, Ui.textStyle ui th.FontSize (if selected then th.Text else th.TextMuted)))) ])
+            let at (p: Vec2) = Vec2.add p (Vec2.create 0.0f y)
+            let handle =
+                dragHandle at (fun p -> ui.Send(LayerPress(n.Id, p))) (fun p -> ui.Send(LayerMove p)) (fun p -> ui.Send(LayerRelease p)) (Rect.create 0.0f y Layers.rowW Layers.rowH)
+            let described (overlay: Scene) =
+                Ui.semantic ui ("layer-" + string n.Id) Role.Button ("Layer " + string (i + 1) + " of " + string nodes.Length + ": " + label)
+                    (fun sem -> { sem with Description = "Select it; drag it, or Page Up and Page Down, to put it elsewhere in the stack"; Selected = selected })
+                    (fun a -> match a with SemanticAction.Activate -> ui.Send(Select(Some n.Id)) | _ -> ())
+                    overlay
+            Group [ shift 0.0f y body; described handle ]
+        let mark =
+            match Drag.over m.LayerDrag with
+            | Some d -> rectangle { bounds d.Mark.X d.Mark.Y d.Mark.W d.Mark.H; radius 1.5f; fill th.Accent }
+            | None -> Empty
+        let hidden = nodes.Length - fits
+        Group [ head
+                shift 0.0f ((Ui.measure ui head).H + 8.0f) caption
+                shift 0.0f listY (Group [ Group (nodes |> List.truncate fits |> List.mapi row); mark ])
+                (if hidden > 0 then shift 0.0f (listY + float32 fits * Layers.rowH + 2.0f) (Label.view ui Label.Caption ("+ " + string hidden + " more")) else Empty) ]
 
     /// While an entry is dragged: the surface that takes the drop says so, over it the widget itself (a picture of it, half transparent) is at the place where it would land, in the frame of the
     /// size it has, and its name is at the pointer.
@@ -278,6 +331,11 @@ module View =
                     gap 8
                     child (Button.view ui "insp-dup" { Button.make "Duplicate" (fun () -> send Duplicate) with Variant = Button.Secondary })
                     child (Button.view ui "insp-front" { Button.make "To front" (fun () -> send BringToFront) with Variant = Button.Secondary })
+                })
+                child (row {
+                    gap 8
+                    child (Button.view ui "insp-forward" { Button.make "Forward" (fun () -> send (MoveLayer(n.Id, -1))) with Variant = Button.Secondary })
+                    child (Button.view ui "insp-backward" { Button.make "Backward" (fun () -> send (MoveLayer(n.Id, 1))) with Variant = Button.Secondary })
                 })
                 childIf (n.Kind = KButton)
                     (Properties.field ui "Variant" ""
@@ -354,7 +412,8 @@ module View =
                 region "elements" Role.Region "Elements" 1
                     (shift 0.0f TopH (Group [ rectangle { bounds 0.0f 0.0f PaletteW canvasH; fill ui.Theme.Surface; shadow 2 0 10 (rgba 0 0 0 60) }
                                               rectangle { bounds (PaletteW - 1.0f) 0.0f 1.0f canvasH; fill ui.Theme.Border }
-                                              shift 16 16 (palette ui canvasRect) ]))
+                                              shift 16 16 (palette ui canvasRect)
+                                              shift 16.0f (16.0f + paletteBottom ui + 16.0f) (layers ui m (canvasH - 16.0f - paletteBottom ui - 32.0f)) ]))
                 region "inspector" Role.Region "Inspector" 3
                     (shift (w - InspectorW) TopH (Group [ rectangle { bounds 0.0f 0.0f InspectorW canvasH; fill ui.Theme.Surface; shadow -2 0 10 (rgba 0 0 0 60) }
                                                           rectangle { bounds 0.0f 0.0f 1.0f canvasH; fill ui.Theme.Border }
