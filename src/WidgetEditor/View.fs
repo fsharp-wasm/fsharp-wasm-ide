@@ -85,6 +85,7 @@ module View =
     /// the press point; the closure (created at press time) keeps receiving the captured moves.
     let private dragOverlay (ui: Ui<Msg>) (selected: bool) (n: Node) (b: Rect) : Scene =
         let down : Vec2 voption ref = ref ValueNone
+        let moved = ref false
         let sx, sy = n.X, n.Y
         // An element being designed is a picture of a widget, not a live one: for the keyboard and for assistive technology it is this one control, which takes the focus
         // and with it the selection, and which the arrow keys move.
@@ -99,14 +100,18 @@ module View =
                 match e with
                 | PointerDown(p, 0) ->
                     down.Value <- ValueSome p
+                    moved.Value <- false
                     ui.Send(Select(Some n.Id))
                     true
                 | PointerMove p when down.Value.IsSome ->
                     let d = down.Value.Value
+                    moved.Value <- true
                     ui.Send(MoveTo(n.Id, Model.snap (sx + p.X - d.X), Model.snap (sy + p.Y - d.Y)))
                     true
                 | PointerUp _ when down.Value.IsSome ->
                     down.Value <- ValueNone
+                    // a second click on the selected element, with no move between, types into its text on the surface
+                    if selected && not moved.Value && Kind.hasText n.Kind then ui.Send(BeginInline n.Id)
                     true
                 | _ -> false),
             rectangle { bounds b; fill Color.Transparent }))
@@ -140,7 +145,9 @@ module View =
             let b0 = Ui.measure dui (nodeWidget dui n)
             Rect.create b0.X b0.Y (Scalar.max' b0.W 24.0f) (Scalar.max' b0.H 18.0f)
         let node (n: Node) : Scene =
-            let widget = nodeWidget dui n
+            // the text being typed has a caret after it
+            let shown = if m.Inline = Some n.Id then { n with Text = n.Text + "▏" } else n
+            let widget = nodeWidget dui shown
             let picture = Semantic(Semantics.create "" Role.None "", widget)
             let body = if m.Preview then widget else Group [ picture; dragOverlay chrome (m.Selected = Some n.Id) n (boundsOf n) ]
             shift n.X n.Y body
@@ -152,9 +159,12 @@ module View =
                 let x0, y0, x1, y1 = b.X - 4.0f, b.Y - 4.0f, b.X + b.W + 4.0f, b.Y + b.H + 4.0f
                 let corner (cx: float32) (cy: float32) =
                     rectangle { bounds (cx - 4.0f) (cy - 4.0f) 8.0f 8.0f; radius 2.0f; fill Color.White; stroke th.Accent 1.5f }
-                let size = sprintf "%d × %d" (int b.W) (int b.H)
+                let size = if m.Inline = Some n.Id then "typing · Enter ends it" else sprintf "%d × %d" (int b.W) (int b.H)
+                // What marks the selection is drawn above the element and must not take the pointer from it: a hit on a shape counts whatever its fill (the topmost one wins), so the frame is four thin
+                // edges and not a rectangle with only a stroke, whose inside would be hit.  Only the handle of the width is a control.
+                let edge (x: float32) (y: float32) (ew: float32) (eh: float32) = rectangle { bounds x y ew eh; fill th.Accent }
                 shift n.X n.Y
-                    (Group [ rectangle { bounds x0 y0 (x1 - x0) (y1 - y0); radius 4.0f; stroke th.Accent 1.5f }
+                    (Group [ edge x0 y0 (x1 - x0) 1.5f; edge x0 (y1 - 1.5f) (x1 - x0) 1.5f; edge x0 y0 1.5f (y1 - y0); edge (x1 - 1.5f) y0 1.5f (y1 - y0)
                              corner x0 y0; corner x1 y0; corner x0 y1; corner x1 y1
                              shift ((x0 + x1) * 0.5f - Chip.width chrome size * 0.5f) (y1 + 8.0f) (Chip.view chrome size (rgba 8 12 24 235) Color.White)
                              (if Kind.hasWidth n.Kind && n.Rotation = 0.0f then widthHandle chrome th n b else Empty) ])

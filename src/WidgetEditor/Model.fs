@@ -59,6 +59,8 @@ type Model =
       Drag: Session<Kind>
       /// An element of the layers list being pressed or dragged (the pointer in the space of the list); where it would land is the drop the session holds.
       LayerDrag: Session<int>
+      /// The element whose text is being typed on the surface itself, when there is one: the keys and the typed text go into it.
+      Inline: int option
       Selected: int option
       Ui: UiState
       DarkDesign: bool
@@ -95,6 +97,9 @@ type Msg =
     | LayerCancel
     /// One place in the list: -1 is one up (in front of the element that is above), 1 one down.
     | MoveLayer of id: int * by: int
+    /// Type into the text of an element on the surface (a second click on the selected element, or F2): Enter and Escape end it.
+    | BeginInline of int
+    | EndInline
     | SetFontSize of int * float32
     | SetRotation of int * float32
     | SetOpacity of int * float32
@@ -165,7 +170,7 @@ module Model =
               mk 3 KText 48.0f 128.0f (fun n -> { n with W = 280.0f })
               mk 4 KCheck 48.0f 184.0f (fun n -> { n with Text = "Remember me"; On = true })
               mk 5 KButton 48.0f 224.0f (fun n -> { n with Text = "Sign in"; W = 280.0f }) ]
-        { Nodes = nodes; NextId = 6; History = History.create 200; Drag = Idle; LayerDrag = Idle; Selected = Some 5; Ui = UiState.empty
+        { Nodes = nodes; NextId = 6; History = History.create 200; Drag = Idle; LayerDrag = Idle; Inline = None; Selected = Some 5; Ui = UiState.empty
           DarkDesign = true; Preview = false; ShowCode = false; CodeScroll = 0.0f; VariantOpen = false }, Cmd.none
 
     let private mapNode id f (m: Model) =
@@ -194,7 +199,7 @@ module Model =
         | Some drop -> { m with Nodes = Layers.reorder m.Nodes id drop }
         | None -> m
 
-    let private step (m: Model) (msg: Msg) : Model =
+    let private stepOnce (m: Model) (msg: Msg) : Model =
             match msg with
             | UiMsg u -> { m with Ui = UiState.update m.Ui u }
             // they act on the log, not on the elements: `update` answers them before a step is taken
@@ -223,6 +228,11 @@ module Model =
                  | None -> m1)
             | LayerCancel -> { m with LayerDrag = Idle }
             | MoveLayer(id, by) -> moveLayer m id by
+            | BeginInline id ->
+                (match m.Nodes |> List.tryFind (fun n -> n.Id = id) with
+                 | Some n when Kind.hasText n.Kind && not m.Preview -> { m with Inline = Some id; Selected = Some id; Ui = UiState.update m.Ui UiMsg.Blur }
+                 | _ -> m)
+            | EndInline -> { m with Inline = None }
             | Select s -> { m with Selected = s }
             | MoveTo(id, x, y) -> mapNode id (fun n -> { n with X = max 0.0f x; Y = max 0.0f y }) m
             | SetW(id, w) -> mapNode id (fun n -> { n with W = max 40.0f (snap w) }) m
@@ -256,6 +266,12 @@ module Model =
                 // Tab, Enter, Space and the arrows on a focused control are the toolkit's (Ui.root): what reaches here is typing into the text of an element, and the keys
                 // of the surface: the arrows nudge the selected element, Delete removes it, Escape deselects.
                 match m.Ui.Focus, selectedNode m with
+                // text typed on the surface: Enter and Escape end it, the rest is the text (Backspace and the arrows of the text, not the element)
+                | _ when m.Inline.IsSome ->
+                    (match key, m.Inline |> Option.bind (fun id -> m.Nodes |> List.tryFind (fun n -> n.Id = id)) with
+                     | ("Enter" | "Escape"), _ -> { m with Inline = None }
+                     | k, Some n when k <> "Tab" -> mapNode n.Id (fun n -> { n with Text = TextEdit.apply m.Ui.Shift k n.Text }) m
+                     | _ -> m)
                 | _ when key = "Escape" && m.Drag <> Idle -> { m with Drag = Idle }
                 | _ when key = "Escape" && m.LayerDrag <> Idle -> { m with LayerDrag = Idle }
                 | Some "insp-text", Some n when key <> "Tab" ->
@@ -266,6 +282,7 @@ module Model =
                     let d = 8.0f
                     match key with
                     | "Delete" | "Backspace" -> { m with Nodes = m.Nodes |> List.filter (fun x -> x.Id <> n.Id); Selected = None }
+                    | "F2" when Kind.hasText n.Kind -> { m with Inline = Some n.Id }
                     | "PageUp" -> moveLayer m n.Id -1
                     | "PageDown" -> moveLayer m n.Id 1
                     | "Left" -> mapNode n.Id (fun n -> { n with X = max 0.0f (n.X - d) }) m
@@ -277,8 +294,16 @@ module Model =
                 | _ -> m
             | Typed text ->
                 match m.Ui.Focus, selectedNode m with
+                | _ when m.Inline.IsSome -> mapNode m.Inline.Value (fun n -> { n with Text = TextEdit.typed text n.Text }) m
                 | Some "insp-text", Some n -> mapNode n.Id (fun n -> { n with Text = TextEdit.typed text n.Text }) m
                 | _ -> m
+
+    /// A step, and the end of the typing on the surface when the element is no longer the one selected, or is gone, or the surface is not being edited.
+    let private step (m: Model) (msg: Msg) : Model =
+        let r = stepOnce m msg
+        match r.Inline with
+        | Some id when r.Selected <> Some id || r.Preview || not (r.Nodes |> List.exists (fun n -> n.Id = id)) -> { r with Inline = None }
+        | _ -> r
 
     let private snapshot (m: Model) : Snapshot = { Nodes = m.Nodes; NextId = m.NextId; Selected = m.Selected }
 
@@ -292,6 +317,9 @@ module Model =
     let private logKey (m: Model) (msg: Msg) : string =
         let sel = (match m.Selected with Some id -> string id | None -> "")
         match msg, m.Ui.Focus with
+        // the text typed on the surface is one step, whatever the keys are (Backspace is no step of its own there)
+        | Key ("Enter" | "Escape"), _ when m.Inline.IsSome -> ""
+        | (Key _ | Typed _), _ when m.Inline.IsSome -> "inline:" + sel
         | MoveTo(id, _, _), _ -> "move:" + string id
         | SetW(id, _), _ -> "w:" + string id
         | SetText(id, _), _ -> "text:" + string id

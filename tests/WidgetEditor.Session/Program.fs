@@ -272,4 +272,44 @@ let main argv =
     // every layer is a control for assistive technology, named by its place and what it is
     let rows2 = SemanticTree.walk (app.Build(t, Vec2.create (float32 w) (float32 h))) |> Array.filter (fun s -> s.Id.StartsWith "layer-")
     check "a layer is named by its place in the stack and what it is" (rows2.Length = app.Model.Nodes.Length && rows2 |> Array.forall (fun s -> s.Name.StartsWith "Layer " && s.Name.Contains " of "))
+    // typing into the text of an element on the surface itself: a second click on the selected element, or F2; Enter and Escape end it; the typing is one step of the undo log
+    app.Dispatch (UiMsg (UiMsg.Blur))
+    while Model.canUndo app.Model do app.Dispatch Undo
+    let textOf id = (app.Model.Nodes |> List.find (fun n -> n.Id = id)).Text
+    let nodeRect (id: int) : Rect =
+        frame None
+        (SemanticTree.collect stage.Resolved |> Array.find (fun n -> n.Info.Id = "node-" + string id)).Bounds
+    let heading1 = app.Model.Nodes |> List.find (fun n -> n.Kind = KHeading)
+    let c = centre (nodeRect heading1.Id)
+    app.Dispatch (Select None)
+    click c.X c.Y
+    check "the first click selects the element and types nothing" (app.Model.Selected = Some heading1.Id && app.Model.Inline.IsNone)
+    click c.X c.Y
+    check "a second click on the selected element types into its text on the surface" (app.Model.Inline = Some heading1.Id)
+    frame (Some "editor-10-inline")
+    let before = textOf heading1.Id
+    app.Dispatch (Typed "!"); app.Dispatch (Typed "?")
+    check "what is typed goes into the text of the element" (textOf heading1.Id = before + "!?")
+    key "Backspace"
+    check "Backspace takes a character of the text, and not the element" (textOf heading1.Id = before + "!" && app.Model.Nodes |> List.exists (fun n -> n.Id = heading1.Id))
+    key "Enter"
+    check "Enter ends it and keeps the text" (app.Model.Inline.IsNone && textOf heading1.Id = before + "!")
+    app.Dispatch Undo
+    check "the typing is one step of the undo log" (textOf heading1.Id = before)
+    // F2 starts it for the selected element; Escape ends it; another selection ends it too
+    key "F2"
+    check "F2 types into the selected element" (app.Model.Inline = Some heading1.Id)
+    app.Dispatch (Typed "x")
+    key "Escape"
+    check "Escape ends it" (app.Model.Inline.IsNone && textOf heading1.Id = before + "x")
+    key "F2"
+    let others = app.Model.Nodes |> List.filter (fun n -> n.Id <> heading1.Id)
+    app.Dispatch (Select (Some others.Head.Id))
+    check "selecting another element ends the typing" (app.Model.Inline.IsNone)
+    // an element without a text has nothing to type into
+    let divider = Model.newNode 99 KDivider 40.0f 40.0f
+    app.Dispatch (Add KDivider)
+    key "F2"
+    check "an element with no text does not start it" (app.Model.Inline.IsNone)
+    ignore divider
     if failures > 0 then 1 else 0
