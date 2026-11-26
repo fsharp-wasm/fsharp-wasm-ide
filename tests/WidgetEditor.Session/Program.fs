@@ -106,6 +106,12 @@ let main argv =
     stage.Input(KeyUp "ShiftLeft") |> ignore
     key "B"
     check "Shift gives capitals and symbols" ((app.Model.Nodes |> List.find (fun n -> n.Id = 5)).Text = "Sign ok 1A!b")
+    // typed text: the platform has made the characters (layout, Shift, Caps Lock, AltGr, accents), so a full stop, a comma, a capital without Shift, an umlaut, @ and the euro sign are typed as they are
+    let text t = frame None; stage.Input(TextInput t) |> ignore
+    for t in [ "."; ","; "H"; "ä"; "@"; "\u20AC"; "\"" ] do text t
+    check "typed text is typed as it is" (text5 () = "Sign ok 1A!b.,H\u00E4@\u20AC\"")
+    text "\n"
+    check "a control character is not text" (text5 () = "Sign ok 1A!b.,H\u00E4@\u20AC\"")
     app.Dispatch (UiMsg (UiMsg.Blur))
     // Tab walks the inspector controls; arrows then adjust the focused slider
     app.Dispatch (Select (Some 6))

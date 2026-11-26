@@ -77,6 +77,8 @@ type Msg =
     | DragRelease of Vec2 * Rect
     | DragCancel
     | Key of string
+    /// What the person typed, as the platform made it (the layout, Shift, Caps Lock, AltGr, accents applied): into the text of the element when its field has the focus.
+    | Typed of string
     | ToggleTheme
     | TogglePreview
     | ToggleCode
@@ -193,6 +195,10 @@ module Model =
                     | "Escape" -> { m with Selected = None }
                     | _ -> m
                 | _ -> m
+            | Typed text ->
+                match m.Ui.Focus, selectedNode m with
+                | Some "insp-text", Some n -> mapNode n.Id (fun n -> { n with Text = TextEdit.typed text n.Text }) m
+                | _ -> m
 
     let private snapshot (m: Model) : Snapshot = { Nodes = m.Nodes; NextId = m.NextId; Selected = m.Selected }
 
@@ -212,7 +218,7 @@ module Model =
         | SetValue(id, _), _ -> "value:" + string id
         | Key ("Delete" | "Backspace"), None -> ""
         | Key "Tab", _ | Key "Enter", _ | Key "Escape", _ -> ""
-        | Key _, Some f when f.StartsWith "insp-" -> f + ":" + sel
+        | (Key _ | Typed _), Some f when f.StartsWith "insp-" -> f + ":" + sel
         | Key _, None -> "nudge:" + sel
         | _ -> ""
 

@@ -4,6 +4,7 @@
 ///   onPointer(kind, x, y, button)   kind 0 down, 1 up, 2 move, 3 leave
 ///   onWheel(dx, dy)
 ///   onKey(kind)                     kind 0 down, 1 up; the key name is fetched with Gfx.pendingKey
+///   onText()                        what the person typed (the character, as the platform made it), fetched with Gfx.pendingKey; the glue sends characters here and the other keys to onKey
 ///   frame(nowMs)                    build, resolve, draw (when the model changed, an event was taken, or a caret blinks: see CanvasHost.Frame)
 module FSharp.Wasm.Ide.Browser.WidgetEditor
 
@@ -55,6 +56,9 @@ let onWheel (dx: float) (dy: float) : unit = editor.Input(Scroll(Vec2.create (fl
 let onKey (kind: int) : unit =
     let key = Gfx.pendingKey ()
     editor.Input(if kind = 0 then KeyDown key else KeyUp key) |> ignore
+
+[<CompiledName("onText")>]
+let onText () : unit = editor.Input(TextInput(Gfx.pendingKey ())) |> ignore
 
 [<CompiledName("frame")>]
 let frame (nowMs: float) : unit = editor.Frame nowMs

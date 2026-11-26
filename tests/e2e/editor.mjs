@@ -102,6 +102,41 @@ try {
     for (const ch of 'ok') { await page.keyboard.press(ch); await page.waitForTimeout(40); }
   });
   check('the canvas keeps the focus while typing', await page.evaluate(() => document.activeElement?.id === 'gfx'));
+  // What a browser says for these keys is the character; the toolkit used to drop everything but letters, digits and the space (no full stop, no @, no question mark).  A full stop is
+  // smaller than the step of the sample above, so the text field itself is read, every pixel of it, on an emptied field and with a Backspace after each character.
+  const field = () => page.evaluate(() => {
+    const c = document.getElementById('gfx'), r = c.width / c.clientWidth;
+    const d = c.getContext('2d').getImageData(Math.round(940 * r), Math.round(120 * r), Math.round(230 * r), Math.round(34 * r)).data;
+    let h = 0; for (let i = 0; i < d.length; i++) h = (h * 31 + d[i]) | 0;
+    return h;
+  });
+  // the preview switched the selection off: a Label from the palette is added and selected, so that the inspector has its text field, and the field takes the focus
+  await page.mouse.click(...at(95, 179)); await page.waitForTimeout(250);
+  await page.mouse.click(...at(1055, 137)); await page.waitForTimeout(150);
+  for (let i = 0; i < 40; i++) await page.keyboard.press('Backspace');
+  // the focused field has a caret that blinks: the empty field has two looks, and both are collected before anything is typed
+  const looks = async () => { const seen = new Set(); for (let i = 0; i < 12; i++) { seen.add(await field()); await page.waitForTimeout(110); } return seen; };
+  const emptied = await looks();
+  const typedChanges = async (name, act) => {
+    await act(); await page.waitForTimeout(120);
+    const typed = !emptied.has(await field());
+    await page.keyboard.press('Backspace'); await page.waitForTimeout(120);
+    const back = emptied.has(await field());
+    check(`${name} is typed into the inspector, and Backspace takes it out`, typed && back, `typed=${typed} back=${back}`);
+  };
+  for (const [name, key] of [['a full stop', '.'], ['a comma', ','], ['an exclamation mark (Shift+1)', '!'], ['an @', '@'], ['a double quote', '"'], ['a question mark', '?'], ['a capital (Shift+H)', 'Shift+H']]) {
+    await typedChanges(name, () => (key.includes('+') ? page.keyboard.press(key) : page.keyboard.type(key)));
+  }
+  // AltGr (Ctrl+Alt on Windows, with the AltGraph state) and Option (macOS) make characters on a German keyboard: @ { } [ ] \ | ~ and the euro sign
+  await typedChanges('AltGr+Q (an @ on a German keyboard)', () => page.locator('#gfx').evaluate((c) => {
+    c.dispatchEvent(new KeyboardEvent('keydown', { key: '@', ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true }));
+  }));
+  await typedChanges('Option+L on a Mac (an @)', () => page.locator('#gfx').evaluate((c) => {
+    c.dispatchEvent(new KeyboardEvent('keydown', { key: '@', altKey: true, bubbles: true, cancelable: true }));
+  }));
+  for (const [name, key] of [['an umlaut (ä) of another layout', 'ä'], ['the euro sign', '€']]) {
+    await typedChanges(name, () => page.locator('#gfx').evaluate((c, key) => c.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })), key));
+  }
   check('no page errors', errors.length === 0, JSON.stringify(errors).slice(0, 300));
 } catch (e) {
   check('ran to the end', false, String(e.message).split('\n')[0]);

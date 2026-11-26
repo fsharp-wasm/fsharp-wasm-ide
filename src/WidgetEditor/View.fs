@@ -362,4 +362,4 @@ module View =
                 region "toolbar" Role.Toolbar "Editor actions" 0 (topBar ui m w)
                 dragFeedback ui m canvasRect
             ]
-        Ui.root ui (fun k -> ui.Send(Key k)) page
+        Ui.rootText ui (fun k -> ui.Send(Key k)) (fun t -> ui.Send(Typed t)) page
